@@ -1,0 +1,94 @@
+# ---------------------------------------------------------------------------
+# personal-blog-backend — .gitignore
+# ---------------------------------------------------------------------------
+
+# Secretos y configuración local
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+credentials
+credentials.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Herramientas de calidad y pruebas
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+.tox/
+.nox/
+.hypothesis/
+
+# Artefactos de despliegue (Lambda, uso futuro)
+lambda_package/
+*.zip
+!docs/**/*.zip
+
+# Base de datos y datos locales
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+*.sql.gz
+data/
+
+# Logs
+logs/
+*.log
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editores / IDE
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporales
+tmp/
+temp/
+*.tmp
+*.bak
+*.orig
