@@ -1,0 +1,64 @@
+# ---------------------------------------------------------------------------
+# personal-blog-backend — .dockerignore
+#
+# Reduce el contexto de construccion y, sobre todo, impide que un `.env` real
+# o un artefacto local acabe dentro de la imagen (requisito S-10).
+# ---------------------------------------------------------------------------
+
+# Secretos y configuracion local
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+credentials
+credentials.json
+
+# Control de versiones y metadatos
+.git/
+.gitignore
+.gitattributes
+.github/
+
+# Entornos virtuales y cache de Python
+.venv/
+venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Herramientas de calidad y pruebas: no forman parte de la imagen de ejecucion
+tests/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Documentacion y configuracion de desarrollo
+README.md
+CONTRIBUTING.md
+.editorconfig
+.vscode/
+.idea/
+
+# Artefactos y temporales
+lambda_package/
+*.zip
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+*.bak
+*.orig
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+desktop.ini
