@@ -1,0 +1,22 @@
+# ---------------------------------------------------------------------------
+# personal-blog-backend — dependencias de desarrollo
+#
+# Incluye las de ejecucion y anade pruebas, cobertura, lint, formato y tipado.
+# Estas dependencias NO entran en la imagen Docker ni en el artefacto Lambda.
+#
+# `httpx2` es el cliente que exige `starlette.testclient` desde Starlette 1.3:
+# con el `httpx` clasico el import emite `StarletteDeprecationWarning`. Es el
+# mismo proyecto renombrado (github.com/pydantic/httpx2) y solo se usa en las
+# pruebas.
+#
+# Instalacion:
+#   pip install -r requirements-dev.txt
+# ---------------------------------------------------------------------------
+
+-r requirements.txt
+
+pytest==9.1.1
+pytest-cov==7.1.0
+httpx2==2.10.0
+ruff==0.16.1
+mypy==2.3.0
