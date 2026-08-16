@@ -1,0 +1,65 @@
+# ---------------------------------------------------------------------------
+# personal-blog-backend — politica de finales de linea (Task/005.6)
+#
+# Por que existe este archivo
+#
+# Git para Windows instala `core.autocrlf=true` a nivel de sistema. Con esa
+# configuracion, un checkout convierte a CRLF el contenido del arbol de trabajo
+# aunque el indice guarde LF. `ruff format` esta configurado con
+# `line-ending = "lf"` (pyproject.toml), de modo que `ruff format --check .`
+# fallaba en TODOS los archivos Python por una diferencia que no era de formato
+# sino de fin de linea.
+#
+# `.editorconfig` ya declaraba `end_of_line = lf`, pero solo gobierna al editor:
+# no interviene en el checkout de Git. Este archivo es la capa que faltaba.
+#
+# La politica NO depende de la configuracion personal de cada maquina: los
+# atributos del repositorio tienen prioridad sobre `core.autocrlf`, de modo que
+# un clon nuevo obtiene LF sin que nadie tenga que configurar nada.
+#
+# Regla vigente declarada en CONTRIBUTING.md seccion 5: "Fin de linea | LF".
+# ---------------------------------------------------------------------------
+
+# Todo archivo de texto se normaliza a LF en el indice y se extrae con LF.
+# `text=auto` deja que Git detecte binarios y no los toque.
+* text=auto eol=lf
+
+# --- Codigo y configuracion: LF explicito ----------------------------------
+# Declarados aunque `* text=auto eol=lf` ya los cubre: dejan la intencion
+# escrita y evitan que una deteccion heuristica decida por nosotros.
+*.py        text eol=lf
+*.pyi       text eol=lf
+*.toml      text eol=lf
+*.cfg       text eol=lf
+*.ini       text eol=lf
+*.mako      text eol=lf
+*.txt       text eol=lf
+*.md        text eol=lf
+*.json      text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.sh        text eol=lf
+*.sql       text eol=lf
+Dockerfile  text eol=lf
+.dockerignore text eol=lf
+.gitignore  text eol=lf
+.editorconfig text eol=lf
+.env.example  text eol=lf
+
+# --- Excepcion tecnica: scripts por lotes de Windows -----------------------
+# `cmd.exe` puede interpretar mal etiquetas y `goto` si el archivo llega con
+# LF. No existe ninguno hoy; la regla evita que el primero que aparezca nazca
+# roto.
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+
+# --- Binarios: nunca se convierten -----------------------------------------
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.pdf       binary
+*.zip       binary
+*.gz        binary
+*.whl       binary
