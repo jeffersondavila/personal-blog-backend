@@ -175,13 +175,36 @@ ruff format --check .       # formato
 mypy                        # tipado estático (modo strict)
 ```
 
-Las pruebas de `tests/integration/` necesitan PostgreSQL. Se activan definiendo:
+### 10.1 Integración: base de datos **dedicada de pruebas**
+
+Las pruebas de `tests/integration/` necesitan PostgreSQL y son **destructivas**: ejecutan
+`alembic downgrade base`, que revierte el esquema entero.
+
+> **Nunca apuntes esta variable a `personal_blog`**, la base cotidiana de desarrollo. Desde
+> `Task/008` contendrá el contenido real del blog y un `downgrade base` lo destruiría.
+> *(Corregido en `Task/005.6`: este README indicaba aquí `.../personal_blog`.)*
+
+Se activan definiendo la variable hacia la base **de pruebas**:
 
 ```powershell
-$env:PERSONAL_BLOG_TEST_DATABASE_URL = "postgresql://<usuario>:<clave>@127.0.0.1:55432/personal_blog"
+$env:PERSONAL_BLOG_TEST_DATABASE_URL = "postgresql://<usuario>:<clave>@127.0.0.1:55432/personal_blog_test"
 ```
 
-Sin esa variable **se omiten**, no fallan: la suite sigue siendo ejecutable sin Docker.
+Crear y **marcar** esa base es un paso previo, descrito en el
+[runbook del entorno local §9](../personal-blog-infra/docs/runbooks/local-environment.md).
+La marca no es opcional: la suite se niega a ejecutarse contra una base que no la lleve.
+
+Comportamiento, sin ambigüedad posible:
+
+| Situación | Resultado |
+| --- | --- |
+| Variable **no definida** | La integración se **omite** (`SKIP`). La suite sigue siendo ejecutable sin Docker. |
+| Variable definida y todo correcto | La integración **se ejecuta**. |
+| Variable definida pero PostgreSQL no responde, o las credenciales son incorrectas | **FALLA.** Nunca se degrada a `skip`: eso dejaría la suite verde justo cuando el acceso a datos está roto. |
+| Destino sin sufijo `_test` o sin la marca de pruebas | **FALLA** antes de ejecutar nada. |
+
+Regla completa:
+[BACKEND_TESTING_STRATEGY §8.3](../personal-blog-infra/docs/project-management/BACKEND_TESTING_STRATEGY.md).
 
 El proyecto **no silencia advertencias**: no hay `filterwarnings` en `pyproject.toml`, y
 `pytest -W error` termina con **0 warnings**. El cliente de pruebas es **`httpx2`**, que es

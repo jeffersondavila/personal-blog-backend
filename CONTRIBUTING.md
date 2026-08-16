@@ -93,7 +93,12 @@ pytest
 Derivadas del destino serverless
 ([ADR-003](../personal-blog-infra/docs/adr/ADR-003-serverless-low-cost-cloud.md)):
 
-- **Sin estado en memoria** entre peticiones (nada de cachés locales de proceso).
+- **Sin estado de negocio en memoria** entre peticiones: ni sesiones de usuario, ni
+  contenido cacheado, ni nada cuya pérdida al terminar el proceso cambie una respuesta.
+  Una **caché técnica recreable** —`lru_cache` sobre configuración, *engine* o
+  `sessionmaker`— sí es correcta: se reconstruye sola y ayuda al arranque en frío
+  (precisado en `Task/005.6`; ver
+  [software-architecture §6](../personal-blog-infra/docs/architecture/software-architecture.md)).
 - **Sin procesos residentes** ni tareas en segundo plano de larga duración.
 - **Conexiones a base de datos efímeras**: nada que asuma una conexión persistente.
 - **Configuración por variables de entorno**, nunca valores incrustados en el código.
