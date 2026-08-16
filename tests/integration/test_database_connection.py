@@ -52,12 +52,62 @@ def test_session_scope_entrega_una_sesion_utilizable(configured_process: None) -
     assert not sesion.in_transaction()
 
 
-def test_session_scope_revierte_si_falla(configured_process: None) -> None:
+def test_session_scope_confirma_y_el_dato_persiste(
+    configured_process: None, tabla_de_pruebas: str, database_engine: Engine
+) -> None:
+    """El commit debe **persistir**, no solo ejecutarse.
+
+    Comprobar que `session.commit()` fue llamado no demuestra nada: una
+    implementacion rota podria llamarlo sobre una transaccion equivocada y la
+    prueba seguiria verde. Aqui el dato se lee desde **otra sesion**, que es la
+    unica forma de observar el efecto real.
+    """
     from app.shared.database import session_scope
 
-    with pytest.raises(RuntimeError), session_scope() as sesion:
-        sesion.execute(text("SELECT 1"))
-        raise RuntimeError("fallo dentro de la transaccion")
+    with session_scope() as sesion:
+        sesion.execute(
+            text(f"INSERT INTO {tabla_de_pruebas} (id, nota) VALUES (1, 'confirmado')")  # noqa: S608
+        )
+
+    # Sesion independiente, sobre el motor de la fixture: conexion distinta y
+    # transaccion distinta de la que hizo el INSERT.
+    with database_engine.connect() as connection:
+        nota = connection.execute(
+            text(f"SELECT nota FROM {tabla_de_pruebas} WHERE id = 1")  # noqa: S608
+        ).scalar_one_or_none()
+
+    assert nota == "confirmado"
+
+
+def test_session_scope_revierte_y_el_dato_no_persiste(
+    configured_process: None, tabla_de_pruebas: str, database_engine: Engine
+) -> None:
+    """El rollback debe **revertir estado**, no solo dejar propagar la excepcion.
+
+    La comprobacion intermedia dentro de la transaccion es deliberada: sin ella,
+    un `INSERT` que nunca llegara a ejecutarse produciria el mismo cero final y
+    la prueba pasaria sin haber probado el rollback.
+    """
+    from app.shared.database import session_scope
+
+    with pytest.raises(RuntimeError):
+        with session_scope() as sesion:
+            sesion.execute(
+                text(f"INSERT INTO {tabla_de_pruebas} (id, nota) VALUES (2, 'revertido')")  # noqa: S608
+            )
+            visible_dentro = sesion.execute(
+                text(f"SELECT count(*) FROM {tabla_de_pruebas} WHERE id = 2")  # noqa: S608
+            ).scalar_one()
+            assert visible_dentro == 1, "el INSERT no llego a aplicarse dentro de la transaccion"
+
+            raise RuntimeError("fallo dentro de la transaccion")
+
+    with database_engine.connect() as connection:
+        filas = connection.execute(
+            text(f"SELECT count(*) FROM {tabla_de_pruebas} WHERE id = 2")  # noqa: S608
+        ).scalar_one()
+
+    assert filas == 0
 
 
 def test_la_dependencia_de_fastapi_entrega_una_sesion(configured_process: None) -> None:

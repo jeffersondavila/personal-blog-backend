@@ -7,6 +7,7 @@ contrasena** de la base de datos.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -15,6 +16,12 @@ from app.shared.configuration import ConfigurationError, Settings, build_setting
 from tests import FAKE_DATABASE_URL
 
 CLAVE = "clave_de_prueba"
+
+#: Valores deliberadamente distintos de los de por defecto, para que su
+#: aparicion en una configuracion de prueba solo pueda venir del `.env`.
+DOTENV_INTRUSO = (
+    "BLOG_APP_NAME=nombre-del-desarrollador\nBLOG_LOG_LEVEL=CRITICAL\nBLOG_APP_DEBUG=true\n"
+)
 
 
 def test_falla_si_falta_la_url_de_base_de_datos(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -71,6 +78,71 @@ def test_debug_prohibido_en_produccion(settings_factory: Any) -> None:
 def test_echo_de_sql_prohibido_en_produccion(settings_factory: Any) -> None:
     with pytest.raises(ConfigurationError):
         settings_factory(app_env="production", database_echo=True)
+
+
+def test_una_configuracion_de_produccion_valida_se_construye(settings_factory: Any) -> None:
+    """La validacion de produccion rechaza lo inseguro **y acepta lo seguro**.
+
+    Sin este caso solo estaba probada la rama que lanza `ValueError`: una
+    validacion que rechazara *toda* configuracion `production` habria pasado la
+    suite igualmente.
+    """
+    configuracion = settings_factory(
+        app_env="production",
+        app_debug=False,
+        database_echo=False,
+        log_format="json",
+    )
+
+    assert configuracion.app_env == "production"
+    assert configuracion.app_debug is False
+    assert configuracion.database_echo is False
+    assert configuracion.log_format == "json"
+
+
+def test_la_configuracion_de_prueba_ignora_el_dotenv_del_desarrollador(
+    settings_factory: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regresion (`Task/005.6`): la suite no puede depender del `.env` local.
+
+    `pydantic-settings` resuelve `env_file=".env"` **relativo al directorio de
+    trabajo**. Situando un `.env` intruso en el cwd se reproduce exactamente el
+    defecto: los campos que la prueba no fija de forma explicita se tomaban de
+    ese archivo.
+    """
+    (tmp_path / ".env").write_text(DOTENV_INTRUSO, encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    configuracion = settings_factory()
+
+    # No basta con comprobar el valor por defecto: se comprueba tambien que el
+    # valor del `.env` intruso no llego, que es el defecto concreto.
+    assert configuracion.app_name != "nombre-del-desarrollador"
+    assert configuracion.app_name == "personal-blog-backend"
+    assert configuracion.log_level != "CRITICAL"
+    assert configuracion.log_level == "INFO"
+    assert configuracion.app_debug is False
+
+
+def test_el_dotenv_intruso_del_caso_anterior_si_es_legible(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Guarda anti-tautologia del test anterior.
+
+    Si `Settings` no encontrara el `.env` por una ruta mal construida, la
+    prueba de aislamiento pasaria sin demostrar nada. Aqui se construye la
+    configuracion **sin** `_env_file=None` y se exige que los valores intrusos
+    **si** lleguen: eso prueba que el archivo esta donde `pydantic-settings` lo
+    busca y que el aislamiento es lo que marca la diferencia.
+    """
+    (tmp_path / ".env").write_text(DOTENV_INTRUSO, encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    configuracion = build_settings(app_env="test", database_url=FAKE_DATABASE_URL)
+
+    assert configuracion.app_name == "nombre-del-desarrollador"
+    assert configuracion.log_level == "CRITICAL"
+    assert configuracion.app_debug is True
 
 
 def test_la_contrasena_no_aparece_en_repr(settings: Settings) -> None:

@@ -12,8 +12,14 @@ license = "MIT"
 authors = [{ name = "jeffersondavila" }]
 
 # Versiones fijadas de forma exacta: la reproducibilidad es un requisito del
-# proyecto (S-09 en non-functional-requirements.md). El bloqueo completo,
-# incluidas las dependencias transitivas, vive en requirements.txt.
+# proyecto (S-09 en non-functional-requirements.md).
+#
+# `requirements.txt` repite estas mismas dependencias DIRECTAS porque el
+# Dockerfile instala desde el sin necesitar el proyecto completo. **No es un
+# lock**: no contiene dependencias transitivas ni hashes. El bloqueo
+# reproducible completo, resuelto en Linux, corresponde a `Task/020-CI-Backend`
+# y sigue registrado como riesgo R-14. Corregido en `Task/005.6`: este
+# comentario afirmaba que requirements.txt ya era ese lock.
 dependencies = [
     "fastapi==0.141.1",
     "uvicorn[standard]==0.52.1",
