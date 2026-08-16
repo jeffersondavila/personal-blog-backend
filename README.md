@@ -220,12 +220,16 @@ La incorporación del backend al Docker Compose del entorno corresponde a `Task/
 
 | Rama | Propósito |
 | --- | --- |
-| `main` | Versión estable o liberable. |
-| `dev` | Integración de tareas aprobadas. |
-| `Task/<numero>-<nombre>` | Trabajo aislado de una tarea, creado desde `dev`. |
+| `main` | Versión estable o liberable. **Única base permitida de las ramas Task.** |
+| `dev` | **Solo integración** de tareas aprobadas. **Nunca base de una Task.** |
+| `Task/<numero>-<nombre>` | Trabajo aislado de una tarea, creado **desde `main`**. |
 
-Una tarea que afecta a varios repositorios usa **el mismo nombre de rama** en todos.
-No se hace merge automático hacia `main`.
+> **Invariante crítico:** toda rama `Task/<...>` nace desde `main` actualizado y limpio.
+> `dev` nunca es base de una Task. Motivo y validaciones:
+> [WORKFLOW §2.1](../personal-blog-infra/docs/project-management/WORKFLOW.md).
+
+Una tarea que afecta a varios repositorios usa **el mismo nombre de rama** en todos, y
+**todas nacen de `main`**. No se hace merge automático hacia `main`.
 
 ## 13. Fuente de verdad de la planificación
 
