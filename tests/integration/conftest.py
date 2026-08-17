@@ -18,6 +18,22 @@ ocultaria exactamente el defecto que la integracion existe para detectar.
 La URL no lleva el prefijo `BLOG_` a proposito: las pruebas limpian ese prefijo
 del entorno para aislarse de la configuracion de la maquina.
 
+Garantia *fail-closed* del harness (vigente desde `Task/005.7`)
+---------------------------------------------------------------
+
+**Ninguna fixture de este harness entrega `Settings`, `Engine`, `Session`,
+conexion o `Config` de Alembic para el destino de integracion sin que la guarda
+haya verificado antes que ese destino es seguro.** Todas se derivan de
+`destino_de_integracion_verificado`, que verifica antes de hacer `yield`.
+
+Lo que **no** se afirma —seria falso— es que resulte imposible que codigo Python
+cualquiera abra una conexion a otra base: `create_engine` esta al alcance de
+quien lo escriba. La garantia es sobre el harness oficial, que es donde una
+prueba futura se equivocaria por accidente.
+
+Comprobaciones: `tests/integration/test_guarda_del_destino.py` (comportamiento) y
+`tests/test_grafo_de_fixtures_de_integracion.py` (estructura del grafo).
+
 Provisionar la base de pruebas:
 `personal-blog-infra/docs/runbooks/local-environment.md` seccion 9.
 """
@@ -98,8 +114,33 @@ def _verificar_que_el_destino_es_de_pruebas(engine: Engine) -> None:
 
 
 @pytest.fixture(scope="session")
-def database_settings() -> Settings:
-    """Configuracion apuntando a la base de datos real de pruebas.
+def destino_de_integracion_verificado() -> Iterator[tuple[Settings, Engine]]:
+    """Resuelve el destino de integracion y **lo verifica antes de entregarlo**.
+
+    Es el unico punto del harness que convierte
+    `PERSONAL_BLOG_TEST_DATABASE_URL` en configuracion y motor. Todo lo demas
+    —`database_settings`, `database_engine`, `configured_process`,
+    `alembic_config`, `tabla_de_pruebas`— se deriva de aqui.
+
+    Por que un unico resolutor (`CERT-AUD-002`)
+    -------------------------------------------
+
+    Hasta `Task/005.6` la guarda vivia en `database_engine`, pero
+    `database_settings` era una fixture publica que devolvia la configuracion
+    **sin verificar nada**. La suite existente no la usaba mal; el harness
+    permitia usarla mal. Una prueba futura podia pedirla, construirse su propio
+    motor con `create_database_engine` y ejecutar DDL contra un destino que nadie
+    habia comprobado. Se reprodujo contra una base `_test` sin marca.
+
+    Concentrar la resolucion en una sola fixture que verifica **antes** de hacer
+    `yield` elimina la ruta insegura en lugar de confiar en que nadie la tome. No
+    quedan dos caminos, uno seguro y otro no, entre los que haya que acordarse de
+    elegir. `tests/test_grafo_de_fixtures_de_integracion.py` comprueba que sigue
+    siendo asi.
+
+    Alcance de la garantia: **las fixtures oficiales del harness**. Cualquiera
+    puede llamar a `create_engine` por su cuenta desde codigo Python arbitrario,
+    y eso ni se impide ni se pretende impedir.
 
     Unico `skip` admitido en toda la integracion: la variable no esta definida,
     es decir, no hay entorno de integracion que ejecutar.
@@ -107,22 +148,31 @@ def database_settings() -> Settings:
     url = _url_de_pruebas()
     if not url:
         pytest.skip(f"{TEST_DATABASE_URL_VARIABLE} no definida: se omite la integracion")
-    return build_settings(app_env="test", database_url=url, log_format="text", _env_file=None)
+
+    configuracion = build_settings(
+        app_env="test", database_url=url, log_format="text", _env_file=None
+    )
+    engine = create_database_engine(configuracion)
+    try:
+        # Antes del `yield`: nada sale de aqui sin haber pasado la guarda.
+        _verificar_que_el_destino_es_de_pruebas(engine)
+        yield configuracion, engine
+    finally:
+        engine.dispose()
 
 
 @pytest.fixture(scope="session")
-def database_engine(database_settings: Settings) -> Iterator[Engine]:
-    """Motor conectado a la base de pruebas, **ya verificada como segura**.
+def database_settings(destino_de_integracion_verificado: tuple[Settings, Engine]) -> Settings:
+    """Configuracion apuntando a la base de datos real de pruebas, ya verificada."""
+    configuracion, _ = destino_de_integracion_verificado
+    return configuracion
 
-    Ninguna prueba de integracion recibe un motor sin que la guarda haya pasado:
-    es la fixture por la que todas entran.
-    """
-    engine = create_database_engine(database_settings)
-    try:
-        _verificar_que_el_destino_es_de_pruebas(engine)
-        yield engine
-    finally:
-        engine.dispose()
+
+@pytest.fixture(scope="session")
+def database_engine(destino_de_integracion_verificado: tuple[Settings, Engine]) -> Engine:
+    """Motor conectado a la base de pruebas, **ya verificada como segura**."""
+    _, engine = destino_de_integracion_verificado
+    return engine
 
 
 @pytest.fixture
