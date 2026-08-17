@@ -130,15 +130,22 @@ def test_el_dotenv_intruso_del_caso_anterior_si_es_legible(
     """Guarda anti-tautologia del test anterior.
 
     Si `Settings` no encontrara el `.env` por una ruta mal construida, la
-    prueba de aislamiento pasaria sin demostrar nada. Aqui se construye la
-    configuracion **sin** `_env_file=None` y se exige que los valores intrusos
-    **si** lleguen: eso prueba que el archivo esta donde `pydantic-settings` lo
-    busca y que el aislamiento es lo que marca la diferencia.
+    prueba de aislamiento pasaria sin demostrar nada. Aqui se pide leerlo de
+    forma explicita y se exige que los valores intrusos **si** lleguen: eso
+    prueba que el archivo esta donde `pydantic-settings` lo busca y que el
+    aislamiento es lo que marca la diferencia.
+
+    `_env_file=".env"` es explicito desde `Task/005.7`. Hasta entonces bastaba
+    con **no** pasar `_env_file`, porque el valor por defecto de `Settings` era
+    `".env"`. Ahora `tests/__init__.py` neutraliza el dotenv para todo el proceso
+    de pruebas (`CERT-AUD-001`), asi que omitirlo ya no lee nada y esta prueba
+    dejaria de comprobar lo que dice comprobar. El requisito cambio; la
+    expectativa —el archivo es legible desde aqui— es exactamente la misma.
     """
     (tmp_path / ".env").write_text(DOTENV_INTRUSO, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
-    configuracion = build_settings(app_env="test", database_url=FAKE_DATABASE_URL)
+    configuracion = build_settings(app_env="test", database_url=FAKE_DATABASE_URL, _env_file=".env")
 
     assert configuracion.app_name == "nombre-del-desarrollador"
     assert configuracion.log_level == "CRITICAL"

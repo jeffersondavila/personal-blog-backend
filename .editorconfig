@@ -37,5 +37,12 @@ end_of_line = lf
 [{Dockerfile,Dockerfile.*,*.dockerfile}]
 indent_size = 2
 
+; Excepcion tecnica: `cmd.exe` puede interpretar mal etiquetas y `goto` si el
+; archivo llega con LF. `.gitattributes` declara `eol=crlf` para estas
+; extensiones; sin esta seccion, el `[*]` de arriba impondria LF desde el editor
+; y habria dos politicas para el mismo archivo. Anadido en Task/005.7.
+[*.{bat,cmd}]
+end_of_line = crlf
+
 [Makefile]
 indent_style = tab
