@@ -13,51 +13,13 @@ Al terminar, la base queda en `head`, su estado normal de trabajo.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from pathlib import Path
-
 import pytest
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import Engine, inspect, text
 
-from app.shared.configuration import Settings
-
 pytestmark = pytest.mark.integration
-
-RAIZ_DEL_REPOSITORIO = Path(__file__).resolve().parents[2]
-
-
-@pytest.fixture
-def alembic_config(database_settings: Settings, database_engine: Engine) -> Iterator[Config]:
-    """Configuracion de Alembic apuntando a la base de datos de pruebas.
-
-    Depende de `database_engine` **a proposito**, aunque no lo use: es la
-    fixture que ejecuta la guarda *fail-closed*. Asi ninguna prueba futura puede
-    obtener un `Config` capaz de hacer `downgrade` sin haber pasado antes por la
-    verificacion del destino. La proteccion es estructural, no una convencion
-    que haya que recordar.
-    """
-    import os
-
-    configuracion = Config(str(RAIZ_DEL_REPOSITORIO / "alembic.ini"))
-    configuracion.set_main_option("script_location", str(RAIZ_DEL_REPOSITORIO / "alembic"))
-
-    # `alembic/env.py` obtiene la URL de la configuracion de la aplicacion.
-    anterior = os.environ.get("BLOG_DATABASE_URL")
-    os.environ["BLOG_DATABASE_URL"] = str(database_settings.database_url)
-    from app.shared.configuration import get_settings
-
-    get_settings.cache_clear()
-    try:
-        yield configuracion
-    finally:
-        if anterior is None:
-            os.environ.pop("BLOG_DATABASE_URL", None)
-        else:
-            os.environ["BLOG_DATABASE_URL"] = anterior
-        get_settings.cache_clear()
 
 
 def _revision_aplicada(engine: Engine) -> str | None:

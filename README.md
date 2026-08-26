@@ -116,21 +116,44 @@ app/
 ├── main.py                    create_app() y la instancia ASGI
 ├── api/
 │   └── health.py              endpoints técnicos
-├── modules/                   módulos de negocio (vacío hasta Task/008)
+├── modules/                   módulos de negocio
+│   ├── models.py              registro único de los modelos ORM
+│   ├── posts/                 domain (ciclo de vida) + infrastructure
+│   ├── book_reviews/          domain (ciclo de vida, valoración) + infrastructure
+│   ├── videos/                domain (ciclo de vida) + infrastructure
+│   ├── projects/              domain (ciclo de vida, estado del trabajo) + infrastructure
+│   ├── profile/               infrastructure
+│   ├── tags/                  infrastructure
+│   ├── media/                 infrastructure (solo el modelo; ObjectStorage → Task/010)
+│   ├── authentication/        infrastructure (solo el modelo; login → Task/011)
+│   └── audit/                 infrastructure (persistencia e inmutabilidad)
 └── shared/
     ├── configuration/         configuración tipada y validada
     ├── logging/               log estructurado en JSON
     ├── errors/                jerarquía de errores y su traducción a HTTP
-    └── database/              base declarativa, motor y sesiones
+    └── database/              base declarativa, mixins, tipos, motor y sesiones
 alembic/                       migraciones
-tests/                         pruebas unitarias
-tests/integration/             pruebas que requieren PostgreSQL
+tests/unit/                    dominio: rápidas, sin base de datos ni framework
+tests/integration/             pruebas que requieren PostgreSQL real
+tests/                         resto de pruebas unitarias (fundación, Task/005)
 ```
 
 La división primaria es **por dominio, no por capa técnica**, y las capas de cada módulo se
 crean **solo cuando resuelven un problema real**: ver
 [ADR-004](../personal-blog-infra/docs/adr/ADR-004-modular-monolith.md) y
 [software-architecture.md](../personal-blog-infra/docs/architecture/software-architecture.md).
+
+**El dominio es Python plano.** Ningún módulo `domain` importa FastAPI, SQLAlchemy ni
+Alembic, y `tests/unit/test_independencia_del_dominio.py` lo comprueba importando cada uno
+en un intérprete limpio.
+
+### 7.1 Modelo de datos
+
+El modelo físico del MVP —tablas, claves, restricciones, índices y el reparto de
+invariantes entre dominio, PostgreSQL y tareas futuras— está documentado en
+[data-model.md](../personal-blog-infra/docs/architecture/data-model.md). El modelo
+**conceptual** sigue siendo
+[CONTENT_MODEL.md](../personal-blog-infra/docs/product/CONTENT_MODEL.md).
 
 ## 8. Endpoints
 
@@ -160,8 +183,14 @@ La URL de conexión **no** está en `alembic.ini`: `alembic/env.py` la obtiene d
 configuración de la aplicación, que la lee del entorno.
 
 La migración `0001` es **fundacional y no crea objetos**: establece el control de versiones
-del esquema. El modelo de datos del blog es `Task/008`. Toda migración posterior debe
-aplicar **y** revertir.
+del esquema. La migración `0002` (`Task/008`) crea el modelo de datos completo del MVP: 14
+tablas, sus restricciones e índices. **No inserta ningún dato**: el perfil y el
+administrador contienen datos personales reales, que no se versionan.
+
+Toda migración debe aplicar **y** revertir. El ciclo `upgrade` → `downgrade` → `upgrade` se
+verifica contra PostgreSQL real en `tests/integration/test_migrations.py`, y
+`tests/integration/test_esquema_fisico.py` comprueba además que el esquema aplicado no se
+desvía del modelo (`compare_metadata`).
 
 ## 10. Pruebas y calidad
 

@@ -81,6 +81,12 @@ def _modulos_del_harness() -> list[str]:
 #: de quedarse en verde inspeccionando un conjunto vacio.
 MODULOS_CONOCIDOS = {
     f"{PAQUETE_DEL_HARNESS}.conftest",
+    f"{PAQUETE_DEL_HARNESS}.test_auditoria",
+    f"{PAQUETE_DEL_HARNESS}.test_esquema_de_contenido",
+    f"{PAQUETE_DEL_HARNESS}.test_esquema_fisico",
+    f"{PAQUETE_DEL_HARNESS}.test_politica_de_medios",
+    f"{PAQUETE_DEL_HARNESS}.test_relaciones_de_etiquetas",
+    f"{PAQUETE_DEL_HARNESS}.test_singletons",
     f"{PAQUETE_DEL_HARNESS}.test_database_connection",
     f"{PAQUETE_DEL_HARNESS}.test_guarda_del_destino",
     f"{PAQUETE_DEL_HARNESS}.test_hermeticidad_de_la_integracion",
@@ -109,7 +115,23 @@ _MARCAS_DE_FIXTURE = ("_fixture_function_marker", "_pytestfixturefunction")
 
 
 def _es_fixture(objeto: Any) -> bool:
-    return any(hasattr(objeto, marca) for marca in _MARCAS_DE_FIXTURE)
+    """Reconoce una fixture de pytest sin dejarse enganar por proxies dinamicos.
+
+    No basta con `hasattr`: hay objetos que responden **a cualquier atributo**.
+    `sqlalchemy.func` es uno —`func.lo_que_sea` construye una llamada SQL—, asi
+    que importarlo en un modulo del harness lo convertia en una "fixture" llamada
+    `func` que, naturalmente, no dependia de la guarda. La comprobacion se ponia
+    roja por un import perfectamente correcto (detectado en `Task/008`).
+
+    Se exige ademas que el valor de la marca **venga de pytest**. Sigue siendo
+    fail-closed: `test_la_inspeccion_encuentra_las_fixtures_del_harness` se pone
+    rojo si esta condicion dejara fuera fixtures de verdad.
+    """
+    for marca in _MARCAS_DE_FIXTURE:
+        valor = getattr(objeto, marca, None)
+        if valor is not None and type(valor).__module__.startswith("_pytest"):
+            return True
+    return False
 
 
 def _fixtures_de(modulo: ModuleType) -> dict[str, Any]:
@@ -138,6 +160,8 @@ def _dependencias(fixture: Any) -> list[str]:
 FIXTURES_CONOCIDAS = {
     "alembic_config",
     "configured_process",
+    "esquema_migrado",
+    "sesion_de_pruebas",
     "database_engine",
     "database_settings",
     "tabla_de_pruebas",
