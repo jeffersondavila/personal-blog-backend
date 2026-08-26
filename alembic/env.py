@@ -4,9 +4,13 @@ La URL de conexion **no** se lee de `alembic.ini`, sino de la configuracion
 tipada de la aplicacion: asi existe una sola fuente de configuracion y ninguna
 credencial acaba en un archivo versionado (requisitos T-01 y S-10).
 
-`target_metadata` apunta a los metadatos de `app.shared.database.Base`. En
-`Task/005` no hay ningun modelo colgando de esa base todavia; la comparacion
-sirve desde `Task/008`, cuando aparezca el modelo de datos del blog.
+`target_metadata` apunta a los metadatos de `app.shared.database.Base`.
+
+El import de `app.modules.models` es **imprescindible y no es decorativo**: es lo
+que hace que las tablas del blog cuelguen de esos metadatos. Sin el, `Base`
+estaria vacia y `--autogenerate` propondria borrar el esquema entero en lugar de
+crearlo. La guarda que impide que ese registro se quede corto vive en
+`tests/unit/test_registro_de_modelos.py`.
 """
 
 from __future__ import annotations
@@ -14,6 +18,7 @@ from __future__ import annotations
 from alembic import context
 from sqlalchemy import Connection
 
+import app.modules.models  # noqa: F401  (registra las tablas en Base.metadata)
 from app.shared.configuration import get_settings
 from app.shared.database import Base
 from app.shared.database.session import create_database_engine

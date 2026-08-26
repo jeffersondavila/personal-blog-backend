@@ -42,12 +42,19 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
 
 import pytest
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import Engine, text
+from sqlalchemy.orm import Session
 
-from app.shared.configuration import Settings, build_settings
+from app.shared.configuration import Settings, build_settings, get_settings
 from app.shared.database.session import create_database_engine
+
+RAIZ_DEL_REPOSITORIO = Path(__file__).resolve().parents[2]
 
 TEST_DATABASE_URL_VARIABLE = "PERSONAL_BLOG_TEST_DATABASE_URL"
 
@@ -220,3 +227,113 @@ def tabla_de_pruebas(database_engine: Engine) -> Iterator[str]:
     finally:
         with database_engine.begin() as connection:
             connection.execute(text(f"DROP TABLE IF EXISTS {nombre}"))
+
+
+# ---------------------------------------------------------------------------
+# Esquema real: Alembic y sesion transaccional (anadido en `Task/008`)
+# ---------------------------------------------------------------------------
+#
+# Todo lo de aqui deriva de `destino_de_integracion_verificado`, igual que el
+# resto del harness: `tests/test_grafo_de_fixtures_de_integracion.py` lo exige y
+# lo comprueba recorriendo el grafo.
+
+
+@contextmanager
+def _proceso_apuntando_a(configuracion: Settings) -> Iterator[None]:
+    """Deja `get_settings()` resolviendo hacia la base de pruebas verificada.
+
+    Lo necesitan `alembic/env.py` y cualquier funcion que resuelva la
+    configuracion por si misma. Se restaura siempre: la fixture `autouse`
+    `_isolated_environment` repone la URL ficticia antes de cada prueba, y este
+    contexto no debe dejar rastro fuera de su bloque.
+    """
+    anterior = os.environ.get("BLOG_DATABASE_URL")
+    os.environ["BLOG_DATABASE_URL"] = str(configuracion.database_url)
+    get_settings.cache_clear()
+    try:
+        yield
+    finally:
+        if anterior is None:
+            os.environ.pop("BLOG_DATABASE_URL", None)
+        else:
+            os.environ["BLOG_DATABASE_URL"] = anterior
+        get_settings.cache_clear()
+
+
+def _construir_configuracion_de_alembic() -> Config:
+    configuracion = Config(str(RAIZ_DEL_REPOSITORIO / "alembic.ini"))
+    configuracion.set_main_option("script_location", str(RAIZ_DEL_REPOSITORIO / "alembic"))
+    return configuracion
+
+
+@pytest.fixture
+def alembic_config(database_settings: Settings, database_engine: Engine) -> Iterator[Config]:
+    """Configuracion de Alembic apuntando a la base de datos de pruebas.
+
+    Depende de `database_engine` **a proposito**, aunque no lo use: es la cadena
+    que pasa por la guarda *fail-closed*. Asi ninguna prueba futura puede obtener
+    un `Config` capaz de hacer `downgrade` sin haber verificado antes el destino.
+    La proteccion es estructural, no una convencion que haya que recordar.
+
+    Vivia en `tests/integration/test_migrations.py` hasta `Task/008`; se movio
+    aqui para que las pruebas de esquema pudieran reutilizar la misma maquinaria
+    en lugar de duplicarla.
+    """
+    with _proceso_apuntando_a(database_settings):
+        yield _construir_configuracion_de_alembic()
+
+
+@pytest.fixture(scope="session")
+def esquema_migrado(destino_de_integracion_verificado: tuple[Settings, Engine]) -> None:
+    """Garantiza que la base de pruebas esta en `head` antes de usar el esquema.
+
+    Las pruebas de esquema no pueden depender de que otro modulo haya ejecutado
+    las migraciones antes: pytest no garantiza ese orden y una base recien
+    creada no tiene ninguna tabla. Se ejecuta una sola vez por sesion.
+    """
+    configuracion, _ = destino_de_integracion_verificado
+    with _proceso_apuntando_a(configuracion):
+        command.upgrade(_construir_configuracion_de_alembic(), "head")
+
+
+@pytest.fixture
+def sesion_de_pruebas(database_engine: Engine, esquema_migrado: None) -> Iterator[Session]:
+    """Sesion aislada: todo lo que escriba la prueba se revierte al terminar.
+
+    La sesion se ata a una conexion con una transaccion **externa** abierta, y el
+    `rollback` final la deshace entera. Ninguna prueba deja filas para la
+    siguiente y ninguna necesita borrar lo que creo, ni siquiera si falla a la
+    mitad.
+
+    Es tambien la razon de que las pruebas de restricciones puedan provocar
+    `IntegrityError` sin ensuciar nada: la transaccion abortada se revierte
+    igual.
+
+    `join_transaction_mode="create_savepoint"` no es un detalle: sin el, la
+    sesion se **adueña** de la transaccion externa y al cerrarse la deja
+    desasociada, de modo que el `rollback` final emite
+    `SAWarning: transaction already deassociated from connection`. El proyecto no
+    tolera advertencias sin documentar y ejecuta la suite con `-W error`. Con el
+    modo de punto de guardado, la sesion trabaja dentro de un `SAVEPOINT` y la
+    transaccion externa sigue siendo de esta fixture de principio a fin.
+
+    **Lo que esta fixture no puede observar:** en PostgreSQL, `now()` devuelve el
+    instante de **inicio de la transaccion**, no la hora de reloj. Todo lo que
+    ocurra aqui comparte marca temporal. Una prueba sobre el avance de
+    `updated_at` entre modificaciones necesita transacciones distintas, y por eso
+    se escribe aparte.
+    """
+    conexion = database_engine.connect()
+    transaccion = conexion.begin()
+    sesion = Session(
+        bind=conexion,
+        autoflush=False,
+        expire_on_commit=False,
+        join_transaction_mode="create_savepoint",
+    )
+    try:
+        yield sesion
+    finally:
+        sesion.close()
+        transaccion.rollback()
+        conexion.close()

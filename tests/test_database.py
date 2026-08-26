@@ -70,9 +70,23 @@ def test_dispose_engine_limpia_las_caches(monkeypatch: Any) -> None:
         get_settings.cache_clear()
 
 
-def test_la_base_declarativa_no_declara_todavia_ninguna_tabla() -> None:
-    """El modelo de datos del blog es `Task/008`, no `Task/005`."""
-    assert Base.metadata.tables == {}
+def test_la_base_declarativa_reune_las_tablas_del_modelo() -> None:
+    """Sustituye a `test_la_base_declarativa_no_declara_todavia_ninguna_tabla`.
+
+    Aquella prueba afirmaba `Base.metadata.tables == {}` —"el proyecto no tiene
+    tablas de negocio"—, cierto en `Task/005` y **condenado a caducar**: se puso
+    en rojo al aparecer la primera tabla legitima del blog, exactamente como le
+    ocurrio a la prueba de migraciones que `Task/005.6` ya tuvo que rehacer por el
+    mismo motivo. El requisito cambio: `Task/008` es la tarea que trae el modelo.
+
+    Lo que se comprueba ahora no caduca: **importar el registro de modelos deja
+    tablas colgando de la base declarativa**. Cuantas y cuales lo verifica
+    `tests/unit/test_registro_de_modelos.py`, y que coincidan con el esquema real,
+    `tests/integration/test_esquema_fisico.py`.
+    """
+    import app.modules.models  # noqa: F401  (registrar es el objeto de la prueba)
+
+    assert Base.metadata.tables, "el registro de modelos no aporto ninguna tabla"
 
 
 def test_la_convencion_de_nombres_esta_activa() -> None:
