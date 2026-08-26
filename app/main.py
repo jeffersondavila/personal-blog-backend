@@ -16,7 +16,7 @@ from fastapi import FastAPI
 from app import __version__
 from app.api import health_router
 from app.shared.configuration import Settings, get_settings
-from app.shared.errors import register_error_handlers
+from app.shared.errors.handlers import register_error_handlers
 from app.shared.logging import configure_logging, get_logger
 
 _logger = get_logger(__name__)
