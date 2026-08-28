@@ -15,6 +15,7 @@ from fastapi import FastAPI
 
 from app import __version__
 from app.api import health_router
+from app.api.public import routers_publicos
 from app.shared.configuration import Settings, get_settings
 from app.shared.errors.handlers import register_error_handlers
 from app.shared.logging import configure_logging, get_logger
@@ -23,9 +24,12 @@ _logger = get_logger(__name__)
 
 _DESCRIPTION = """API del blog personal.
 
-Fundacion del backend (`Task/005`): configuracion, log estructurado, manejo
-centralizado de errores, acceso a PostgreSQL y migraciones. Los recursos de
-contenido llegan a partir de `Task/009`.
+**API publica de solo lectura** (`Task/009`): perfil, articulos, reviews de
+libros, videos, proyectos, etiquetas y busqueda. Toda coleccion esta paginada y
+**solo** se expone contenido publicado: los borradores y los archivados no
+aparecen en ninguna respuesta.
+
+La API administrativa (`/api/v1/admin/*`) llega en `Task/011` y `Task/012`.
 """
 
 
@@ -63,6 +67,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     register_error_handlers(application)
     application.include_router(health_router)
+
+    # Los routers de contenido viven en la capa de presentacion de su modulo
+    # (software-architecture.md seccion 3.2) y se montan aqui bajo el prefijo
+    # versionado. El prefijo es configuracion, no una constante incrustada.
+    for router_publico in routers_publicos:
+        application.include_router(router_publico, prefix=resolved.api_v1_prefix)
 
     _logger.info(
         "Aplicacion inicializada",
