@@ -44,10 +44,12 @@ import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 
@@ -337,3 +339,71 @@ def sesion_de_pruebas(database_engine: Engine, esquema_migrado: None) -> Iterato
         sesion.close()
         transaccion.rollback()
         conexion.close()
+
+
+# ---------------------------------------------------------------------------
+# API publica sobre PostgreSQL real (anadido en `Task/009`)
+# ---------------------------------------------------------------------------
+
+
+class _ClienteQueSiempreConsulta(TestClient):
+    """`TestClient` que invalida el estado en memoria antes de cada peticion.
+
+    Sin esto, las pruebas de integracion medirian menos de lo que dicen. La
+    prueba y la aplicacion comparten la sesion, asi que los objetos que la
+    prueba acaba de crear siguen en el *identity map* con sus colecciones ya
+    pobladas. Una consulta posterior devuelve **esos mismos objetos** y las
+    relaciones no se cargan: el `order_by` de una relacion no se aplica, la
+    estrategia de carga explicita no se ejercita, y una regresion de N+1 pasaria
+    inadvertida porque no habria ninguna consulta que contar.
+
+    En produccion cada peticion abre su propia sesion y **siempre** lee de
+    PostgreSQL. Expirar antes de cada peticion reproduce esa situacion, que es
+    la que las pruebas deben comprobar.
+
+    Se detecto al escribir la prueba del orden de los enlaces sociales: pasaba
+    por el orden de insercion, no por el orden que aplica la base.
+    """
+
+    def __init__(self, *args: object, sesion: Session, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
+        self._sesion = sesion
+
+    def request(self, *args: object, **kwargs: object) -> Any:
+        """Expira el estado en memoria y delega en el cliente real."""
+        self._sesion.expire_all()
+        return super().request(*args, **kwargs)  # type: ignore[arg-type]
+
+
+@pytest.fixture
+def cliente_de_la_api(
+    database_settings: Settings, sesion_de_pruebas: Session
+) -> Iterator[TestClient]:
+    """Cliente HTTP cuya sesion es la transaccion aislada de la prueba.
+
+    Es lo que permite ejercitar la API **de extremo a extremo contra PostgreSQL
+    real** —que es donde se demuestra que un borrador no sale— sin que una
+    prueba deje filas para la siguiente: cuanto escriba la prueba se revierte
+    con la transaccion externa de `sesion_de_pruebas`.
+
+    Se sustituye `get_session` y no la configuracion del proceso porque la
+    dependencia real abre su **propia** sesion con `session_scope`, que confirma
+    al salir. Con ella, cada peticion escaparia del aislamiento y el contenido
+    de una prueba seria visible para las siguientes.
+
+    La cadena hasta la guarda *fail-closed* se mantiene intacta: esta fixture
+    depende de `database_settings` y de `sesion_de_pruebas`, y ambas se derivan
+    de `destino_de_integracion_verificado`.
+    `tests/test_grafo_de_fixtures_de_integracion.py` lo comprueba recorriendo el
+    grafo, asi que la garantia no depende de que nadie lo olvide.
+    """
+    from app.main import create_app
+    from app.shared.database import get_session
+
+    aplicacion = create_app(settings=database_settings)
+    aplicacion.dependency_overrides[get_session] = lambda: sesion_de_pruebas
+
+    with _ClienteQueSiempreConsulta(
+        aplicacion, raise_server_exceptions=False, sesion=sesion_de_pruebas
+    ) as cliente:
+        yield cliente
