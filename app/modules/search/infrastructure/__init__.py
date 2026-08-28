@@ -1,0 +1,1 @@
+"""Persistencia del buscador publico."""

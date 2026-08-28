@@ -81,6 +81,17 @@ def _modulos_del_harness() -> list[str]:
 #: de quedarse en verde inspeccionando un conjunto vacio.
 MODULOS_CONOCIDOS = {
     f"{PAQUETE_DEL_HARNESS}.conftest",
+    f"{PAQUETE_DEL_HARNESS}.datos",
+    f"{PAQUETE_DEL_HARNESS}.test_api_articulos",
+    f"{PAQUETE_DEL_HARNESS}.test_api_busqueda_publica",
+    f"{PAQUETE_DEL_HARNESS}.test_api_etiquetas_publicas",
+    f"{PAQUETE_DEL_HARNESS}.test_api_etiquetas_y_busqueda",
+    f"{PAQUETE_DEL_HARNESS}.test_api_perfil_publico",
+    f"{PAQUETE_DEL_HARNESS}.test_api_proyectos_publicos",
+    f"{PAQUETE_DEL_HARNESS}.test_api_reviews_publicas",
+    f"{PAQUETE_DEL_HARNESS}.test_api_reviews_y_proyectos",
+    f"{PAQUETE_DEL_HARNESS}.test_api_videos_publicos",
+    f"{PAQUETE_DEL_HARNESS}.test_api_videos_y_perfil",
     f"{PAQUETE_DEL_HARNESS}.test_auditoria",
     f"{PAQUETE_DEL_HARNESS}.test_esquema_de_contenido",
     f"{PAQUETE_DEL_HARNESS}.test_esquema_fisico",
@@ -159,6 +170,7 @@ def _dependencias(fixture: Any) -> list[str]:
 #: quedaria sin casos y la comprobacion pasaria sin haber mirado nada.
 FIXTURES_CONOCIDAS = {
     "alembic_config",
+    "cliente_de_la_api",
     "configured_process",
     "esquema_migrado",
     "sesion_de_pruebas",

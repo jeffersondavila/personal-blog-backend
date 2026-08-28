@@ -37,7 +37,30 @@ def test_documentacion_interactiva_disponible(client: TestClient) -> None:
 
 
 def test_openapi_no_declara_endpoints_no_implementados(client: TestClient) -> None:
-    """`/ready` y los recursos de contenido llegan en tareas posteriores."""
-    document: dict[str, Any] = client.get("/openapi.json").json()
+    """Sigue sin declararse lo que todavia no existe.
 
-    assert list(document["paths"]) == ["/health"]
+    Hasta `Task/009` esta prueba afirmaba `paths == ["/health"]`, porque era la
+    unica ruta del backend. `Task/009` publica los diez recursos de la API
+    publica, asi que **esa expectativa cambio por un cambio de requisito**, que
+    es el primero de los supuestos que BACKEND_TESTING_STRATEGY.md seccion 9
+    admite para modificar un test.
+
+    Lo que no cambia es lo que la prueba protege: que no aparezca documentado
+    nada que no se haya implementado. Se sigue comprobando, sobre lo que
+    corresponde a las tareas siguientes:
+
+    - `/ready` es de `Task/017`.
+    - Los endpoints administrativos, de `Task/011` y `Task/012`.
+
+    La comprobacion **exacta** del conjunto de rutas de la API publica vive en
+    `tests/contract/test_openapi_publica.py`, junto al resto del contrato HTTP.
+    Aqui no se duplica.
+    """
+    document: dict[str, Any] = client.get("/openapi.json").json()
+    rutas = set(document["paths"])
+
+    assert "/health" in rutas
+    assert "/ready" not in rutas, "`/ready` es de `Task/017` y no debe existir todavia"
+    assert not [ruta for ruta in rutas if "admin" in ruta], (
+        "la API administrativa es de `Task/011` y `Task/012`"
+    )
