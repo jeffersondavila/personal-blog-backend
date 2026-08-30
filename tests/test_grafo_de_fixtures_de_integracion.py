@@ -82,6 +82,7 @@ def _modulos_del_harness() -> list[str]:
 MODULOS_CONOCIDOS = {
     f"{PAQUETE_DEL_HARNESS}.conftest",
     f"{PAQUETE_DEL_HARNESS}.datos",
+    f"{PAQUETE_DEL_HARNESS}.test_acceso_publico_a_medios",
     f"{PAQUETE_DEL_HARNESS}.test_api_articulos",
     f"{PAQUETE_DEL_HARNESS}.test_api_busqueda_publica",
     f"{PAQUETE_DEL_HARNESS}.test_api_etiquetas_publicas",
@@ -101,6 +102,7 @@ MODULOS_CONOCIDOS = {
     f"{PAQUETE_DEL_HARNESS}.test_database_connection",
     f"{PAQUETE_DEL_HARNESS}.test_guarda_del_destino",
     f"{PAQUETE_DEL_HARNESS}.test_hermeticidad_de_la_integracion",
+    f"{PAQUETE_DEL_HARNESS}.test_medios_persistidos",
     f"{PAQUETE_DEL_HARNESS}.test_migrations",
 }
 

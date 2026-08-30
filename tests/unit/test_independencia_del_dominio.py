@@ -43,6 +43,7 @@ DEPENDENCIAS_PROHIBIDAS = ("fastapi", "starlette", "sqlalchemy", "alembic", "psy
 #: encontrar archivos, la comprobacion pasaria sin haber importado nada.
 DOMINIOS_CONOCIDOS = {
     "app.modules.book_reviews.domain",
+    "app.modules.media.domain",
     "app.modules.posts.domain",
     "app.modules.projects.domain",
     "app.modules.videos.domain",
@@ -119,3 +120,48 @@ def test_el_dominio_no_importa_framework_ni_orm() -> None:
         "Python plano (ADR-004). Revisar si algun import apunta a un paquete que "
         "reexporta piezas de infraestructura en lugar de al modulo hoja."
     )
+
+
+# --- D-07: el almacenamiento no conoce la persistencia ---------------------
+def test_el_contrato_de_almacenamiento_no_arrastra_orm_ni_framework() -> None:
+    """`ObjectStorage` es provider-neutral **y** capa-neutral (requisito T-03).
+
+    Importar el contrato no puede cargar SQLAlchemy: si lo hiciera, seria senal
+    de que el adaptador conoce los modelos, y la comprobacion de uso previa al
+    borrado —que si consulta cinco tablas— habria acabado dentro del
+    almacenamiento en lugar de en su caso de uso. Meter conocimiento de claves
+    foraneas en un adaptador de S3 es exactamente lo que la interfaz existe para
+    impedir.
+    """
+    cargadas = _importar_en_un_interprete_limpio(["app.shared.storage"])
+
+    assert cargadas == [], (
+        f"importar el almacenamiento cargo {cargadas}. `app/shared/storage/` no puede "
+        "conocer ni la persistencia ni el framework HTTP."
+    )
+
+
+def test_importar_el_almacenamiento_no_carga_el_sdk() -> None:
+    """El SDK se importa dentro de `_crear_cliente`, cuando hace falta un cliente.
+
+    Importa por dos razones concretas: un caso de uso que solo dependa del
+    contrato sigue siendo barato de importar y de probar, y `botocore` carga sus
+    modelos de servicio desde disco al importarse, que es coste puro en un
+    arranque en frio de Lambda (requisito P-07).
+    """
+    sentencias = [
+        "import json, sys",
+        "import app.shared.storage",
+        "print(json.dumps([n for n in ('boto3', 'botocore') if n in sys.modules]))",
+    ]
+    codigo = "\n".join(sentencias)
+    resultado = subprocess.run(  # noqa: S603 - interprete propio, sin entrada externa
+        [sys.executable, "-c", codigo],
+        cwd=RAIZ_DEL_REPOSITORIO,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert resultado.returncode == 0, resultado.stderr
+    assert json.loads(resultado.stdout.strip().splitlines()[-1]) == []

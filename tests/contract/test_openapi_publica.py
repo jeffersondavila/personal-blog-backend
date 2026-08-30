@@ -13,6 +13,7 @@ retirarse sin `/api/v2` (api-contracts.md seccion 10).
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
@@ -249,12 +250,33 @@ def test_ningun_esquema_publico_declara_campos_internos(
     assert not filtrados, f"{esquema} declara campos internos: {sorted(filtrados)}"
 
 
-def test_la_referencia_a_un_medio_no_promete_todavia_una_url(documento: dict[str, Any]) -> None:
-    """Decision D-009-O: el campo de acceso lo anade `Task/010`.
+def test_la_referencia_a_un_medio_declara_su_campo_de_acceso(documento: dict[str, Any]) -> None:
+    """Decision **D-009-O**, cerrada por `Task/010`.
 
-    Se comprueba de forma explicita para que el dia que `Task/010` lo anada sea
-    una decision consciente y no un efecto colateral.
+    `Task/009` dejo este caso afirmando `{alt_text, width, height}` **para que
+    anadir el acceso fuera una decision consciente y no un efecto colateral**.
+    Esa es exactamente la condicion que se cumple ahora: el requisito cambio de
+    forma documentada —api-contracts.md seccion 11 y data-model.md seccion 10
+    asignan el campo a `Task/010`— y la expectativa se actualiza con el.
+
+    El conjunto sigue siendo **cerrado**: la prueba no se relaja a "contiene
+    access_url", porque entonces dejaria de detectar un campo de mas.
     """
     propiedades = set(documento["components"]["schemas"]["MedioPublico"]["properties"])
 
-    assert propiedades == {"alt_text", "width", "height"}
+    assert propiedades == {"alt_text", "width", "height", "access_url"}
+
+
+def test_el_esquema_del_medio_no_menciona_el_bucket_ni_la_region(
+    documento: dict[str, Any],
+) -> None:
+    """El contrato publico no puede describir la infraestructura que hay detras.
+
+    Ni el nombre del bucket, ni la region, ni la clave del objeto: son datos del
+    proveedor, y publicarlos los convertiria en parte del contrato `v1`
+    (api-contracts.md seccion 10, regla 2).
+    """
+    esquema = json.dumps(documento["components"]["schemas"]["MedioPublico"]).lower()
+
+    for prohibido in ("bucket", "object_key", "region", "aws", "minio", "s3"):
+        assert prohibido not in esquema

@@ -64,7 +64,13 @@ def test_listado_solo_publica_videos_y_lleva_datos_reproducibles(
         "duration_seconds",
     }
     assert item["provider"] == "youtube"
-    assert item["thumbnail"] == {"alt_text": "Miniatura", "width": 1280, "height": 720}
+    # `access_url` se anade en `Task/010` (D-009-O, cerrada). El enlace lleva
+    # firma y marca de tiempo, asi que no puede compararse literal: se comprueba
+    # su presencia y se mantiene cerrado el conjunto de campos.
+    medio_publico = item["thumbnail"]
+    sin_el_enlace = {c: v for c, v in medio_publico.items() if c != "access_url"}
+    assert sin_el_enlace == {"alt_text": "Miniatura", "width": 1280, "height": 720}
+    assert medio_publico["access_url"].startswith("http")
     assert "object_key" not in item["thumbnail"]
 
 

@@ -58,6 +58,24 @@ class ConflictError(ApplicationError):
     status_code = HTTPStatus.CONFLICT
 
 
+class UnsupportedMediaTypeError(ApplicationError):
+    """El tipo de contenido recibido no esta permitido.
+
+    Distinto de `ValidationFailedError`: la peticion no es incorrecta, es que el
+    formato no entra en la lista permitida (api-contracts.md, seccion 8).
+    """
+
+    code = "unsupported_media_type"
+    status_code = HTTPStatus.UNSUPPORTED_MEDIA_TYPE
+
+
+class PayloadTooLargeError(ApplicationError):
+    """El contenido excede el limite permitido (api-contracts.md, seccion 8)."""
+
+    code = "payload_too_large"
+    status_code = HTTPStatus.REQUEST_ENTITY_TOO_LARGE
+
+
 class DependencyUnavailableError(ApplicationError):
     """Una dependencia externa necesaria no esta disponible."""
 

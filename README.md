@@ -31,12 +31,16 @@ API del blog personal. **FastAPI + PostgreSQL.**
 
 | Campo | Valor |
 | --- | --- |
-| **Etapa** | ETAPA 02 — Fundaciones de las Aplicaciones |
-| **Tarea en curso** | `Task/005-Fundacion-Backend-FastAPI` |
-| **Implementación** | Fundación: aplicación, configuración, log, errores, base de datos y migraciones |
+| **Etapa** | ETAPA 03 — Dominio y Backend |
+| **Tarea en curso** | `Task/010-Almacenamiento-Compatible-S3` |
+| **Implementación** | Fundación (`Task/005`), modelo de datos (`Task/008`), API pública (`Task/009`) y almacenamiento de objetos (`Task/010`) |
 | **Python** | 3.12 |
-| **Endpoints** | `GET /health`, `GET /openapi.json`, `GET /docs` |
-| **Modelo de datos** | No existe todavía (`Task/008`) |
+| **Endpoints** | `GET /health` y los **diez** recursos públicos de `/api/v1`, más `GET /openapi.json` y `GET /docs` |
+| **Modelo de datos** | 14 tablas; migración `0002` es `head` |
+| **Almacenamiento** | `ObjectStorage` con `MinIOStorage` y `S3Storage` |
+
+> Esta tabla se había quedado en `Task/005`. Se corrigió en `Task/010`; la
+> fuente de verdad del estado sigue siendo `STATUS.md`, enlazado abajo.
 
 Estado vigente del proyecto:
 [`personal-blog-infra/docs/project-management/STATUS.md`](../personal-blog-infra/docs/project-management/STATUS.md)
@@ -105,6 +109,22 @@ valores ficticios, está en [`.env.example`](.env.example).
 | `BLOG_DATABASE_POOL_RECYCLE_SECONDS` | No | `1800` | Reciclado de conexiones. |
 | `BLOG_DATABASE_CONNECT_TIMEOUT_SECONDS` | No | `10` | Tiempo máximo de conexión. |
 | `BLOG_DATABASE_ECHO` | No | `false` | Registro de SQL. Prohibido en `production`. |
+| `BLOG_STORAGE_BUCKET` | **Sí** | — | Bucket de los medios. Sin él el proceso no arranca. |
+| `BLOG_STORAGE_PROVIDER` | No | `minio` | `minio` o `s3`. `minio` está **prohibido** en `production`. |
+| `BLOG_STORAGE_REGION` | No | `us-east-1` | Región declarada al firmar. |
+| `BLOG_STORAGE_ENDPOINT_URL` | Con `minio` | — | Endpoint **operativo**: el que usa el backend. Con `s3` se omite en producción. |
+| `BLOG_STORAGE_ACCESS_ENDPOINT_URL` | No | el operativo | Endpoint **de acceso**: el anfitrión que aparece en el enlace temporal. Solo hace falta cuando el consumidor del enlace no ve el mismo anfitrión que el backend, que es el caso en Docker. |
+| `BLOG_STORAGE_ACCESS_KEY` | Con `minio` | — | Clave de acceso. Con `s3` la aporta el rol de la Lambda. |
+| `BLOG_STORAGE_SECRET_KEY` | Con `minio` | — | Secreto. **Nunca se imprime**: `SecretStr` y fuera de `repr`. |
+| `BLOG_STORAGE_ACCESS_TTL_SECONDS` | No | `900` | Validez del enlace temporal de una imagen (60..604800). |
+
+> **Por qué hay dos endpoints.** Dentro de Docker Compose el backend alcanza
+> MinIO como `http://minio:9000`, pero el enlace que devuelve la API lo consume
+> el **navegador del host**, que no resuelve ese nombre. Y no puede corregirse
+> después: el anfitrión forma parte de la firma SigV4, así que reescribirlo
+> produce `403 SignatureDoesNotMatch`. El enlace se firma contra
+> `BLOG_STORAGE_ACCESS_ENDPOINT_URL` desde el principio. Ejecutando el backend
+> directamente en el host los dos coinciden y la segunda variable se omite.
 
 **`.env` está ignorado por Git y nunca se versiona.** En la nube, estas mismas variables
 provienen de AWS SSM Parameter Store.
@@ -124,17 +144,20 @@ app/
 │   ├── projects/              domain (ciclo de vida, estado del trabajo) + infrastructure
 │   ├── profile/               infrastructure
 │   ├── tags/                  infrastructure
-│   ├── media/                 infrastructure (solo el modelo; ObjectStorage → Task/010)
+│   ├── media/                 domain + application + infrastructure + presentation
 │   ├── authentication/        infrastructure (solo el modelo; login → Task/011)
 │   └── audit/                 infrastructure (persistencia e inmutabilidad)
 └── shared/
     ├── configuration/         configuración tipada y validada
     ├── logging/               log estructurado en JSON
     ├── errors/                jerarquía de errores y su traducción a HTTP
+    ├── pagination/            parámetros y envoltura de colección paginada
+    ├── storage/               ObjectStorage, MinIOStorage y S3Storage
     └── database/              base declarativa, mixins, tipos, motor y sesiones
 alembic/                       migraciones
-tests/unit/                    dominio: rápidas, sin base de datos ni framework
-tests/integration/             pruebas que requieren PostgreSQL real
+tests/unit/                    dominio y aplicación: rápidas, sin infraestructura
+tests/contract/                contratos HTTP y de ObjectStorage
+tests/integration/             pruebas que requieren PostgreSQL real (y MinIO)
 tests/                         resto de pruebas unitarias (fundación, Task/005)
 ```
 
@@ -234,6 +257,37 @@ Comportamiento, sin ambigüedad posible:
 
 Regla completa:
 [BACKEND_TESTING_STRATEGY §8.3](../personal-blog-infra/docs/project-management/BACKEND_TESTING_STRATEGY.md).
+
+### 10.2 Integración: almacenamiento de objetos **de pruebas**
+
+Desde `Task/010`, las pruebas de contrato de `ObjectStorage` y las de medios
+necesitan el MinIO del entorno local. Se activan con tres variables:
+
+```powershell
+$env:PERSONAL_BLOG_TEST_STORAGE_ENDPOINT_URL = "http://127.0.0.1:9000"
+$env:PERSONAL_BLOG_TEST_STORAGE_ACCESS_KEY   = "<MINIO_ROOT_USER del .env de infra>"
+$env:PERSONAL_BLOG_TEST_STORAGE_SECRET_KEY   = "<MINIO_ROOT_PASSWORD del .env de infra>"
+```
+
+Mismas dos reglas que con PostgreSQL: **sin la variable del endpoint se omiten;
+con ella, cualquier fallo es `FAIL`**, nunca `skip`.
+
+> **Estas pruebas CREAN Y BORRAN un bucket entero.** No hace falta preparar
+> nada: la suite crea el suyo, con el prefijo `personal-blog-test-`, y lo
+> destruye al terminar. **`BLOG_STORAGE_BUCKET` nunca es alcanzable como
+> destino**, así que el bucket de desarrollo no corre riesgo.
+
+La guarda es *fail-closed* y comprueba tres cosas antes de tocar nada:
+
+| Barrera | Regla |
+| --- | --- |
+| Anfitrión | Solo `localhost`, `127.0.0.1` y equivalentes. Un endpoint remoto —**Amazon S3 incluido**— es un fallo, no un aviso |
+| Bucket | Lo crea la propia suite, con nombre único y prefijo inequívoco |
+| Borrado | Vuelve a comprobar el prefijo justo antes de borrar |
+
+El bucket de la **aplicación** (`personal-blog-media`) es otra cosa y se crea
+una vez, a mano:
+[runbook del entorno local §10](../personal-blog-infra/docs/runbooks/local-environment.md).
 
 El proyecto **no silencia advertencias**: no hay `filterwarnings` en `pyproject.toml`, y
 `pytest -W error` termina con **0 warnings**. El cliente de pruebas es **`httpx2`**, que es

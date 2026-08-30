@@ -28,6 +28,14 @@ dependencies = [
     "sqlalchemy==2.0.51",
     "psycopg[binary]==3.3.4",
     "alembic==1.18.5",
+    # Almacenamiento de objetos compatible con S3 (`Task/010`, decision D-010-A).
+    # Un unico SDK para MinIOStorage y S3Storage: MinIO implementa el protocolo
+    # S3, y el SDK propio de MinIO arrastraria pycryptodome y argon2-cffi al
+    # artefacto de Lambda para codigo que alli nunca se ejecuta (P-07, S-09).
+    "boto3==1.43.82",
+    # Decodificacion, validacion real y miniaturas de imagen (`Task/010`).
+    # No se implementa un parser de JPEG/PNG propio.
+    "pillow==12.3.0",
 ]
 
 [project.optional-dependencies]
@@ -38,6 +46,9 @@ dev = [
     "httpx2==2.10.0",
     "ruff==0.16.1",
     "mypy==2.3.0",
+    # Tipos de boto3 para mypy en modo estricto. Solo tipado: no entra en la
+    # imagen ni en el artefacto de despliegue.
+    "boto3-stubs[s3]==1.43.82",
 ]
 
 [tool.setuptools.packages.find]
@@ -125,4 +136,10 @@ skip_covered = false
 exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",
+    # Cuerpo de un metodo de `Protocol`. No es codigo que pueda ejecutarse: el
+    # `...` solo existe porque Python exige un cuerpo. Quien implementa el
+    # protocolo si se ejecuta, y se prueba. Contarlo como linea sin cubrir
+    # empujaria a escribir una prueba que instancia el protocolo, que no
+    # comprobaria nada (BACKEND_TESTING_STRATEGY.md seccion 12).
+    '''^\s*\.\.\.$''',
 ]
