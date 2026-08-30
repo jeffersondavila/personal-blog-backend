@@ -16,8 +16,9 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 from typing import Annotated, Final, Literal, Self
+from urllib.parse import urlsplit
 
-from pydantic import Field, PostgresDsn, model_validator
+from pydantic import Field, PostgresDsn, SecretStr, model_validator
 from pydantic import ValidationError as PydanticValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -27,6 +28,10 @@ _PASSWORD_IN_URL: Final[re.Pattern[str]] = re.compile(r"(://[^:/?#@]+):[^@/?#]+@
 Environment = Literal["local", "test", "production"]
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 LogFormat = Literal["json", "text"]
+#: Implementacion de `ObjectStorage` que usa el proceso. Tipo cerrado a
+#: proposito: una cadena libre convertiria una errata en un fallo en la primera
+#: subida en lugar de en un fallo de arranque.
+StorageProvider = Literal["minio", "s3"]
 
 
 class ConfigurationError(RuntimeError):
@@ -103,6 +108,61 @@ class Settings(BaseSettings):
         "las sentencias pueden contener datos sensibles.",
     )
 
+    # --- Almacenamiento de objetos (`Task/010`) ----------------------------
+    #
+    # La aplicacion depende de la **interfaz** `ObjectStorage`; estas variables
+    # son lo unico que decide que implementacion la satisface, tal como exige
+    # software-architecture.md seccion 3.7: cambiar de MinIO a S3 es cambiar
+    # configuracion, no codigo.
+    storage_provider: StorageProvider = Field(
+        default="minio",
+        description="Implementacion de ObjectStorage: `minio` en local, `s3` en produccion.",
+    )
+    storage_bucket: str = Field(
+        min_length=3,
+        max_length=63,
+        description="Bucket de los medios. Obligatorio: no existe un valor por defecto "
+        "seguro, y equivocarlo significaria escribir donde no toca.",
+    )
+    storage_region: str = Field(
+        default="us-east-1",
+        min_length=1,
+        description="Region declarada al firmar. MinIO acepta cualquiera; en S3 determina "
+        "ademas el endpoint cuando no se declara uno.",
+    )
+    storage_endpoint_url: str | None = Field(
+        default=None,
+        description="Endpoint **operativo**: el que usa el backend para leer y escribir. "
+        "Obligatorio con `minio`; con `s3` se omite en produccion para que el SDK "
+        "resuelva el de AWS.",
+    )
+    storage_access_endpoint_url: str | None = Field(
+        default=None,
+        description="Endpoint **de acceso**: el anfitrion que aparece en el enlace "
+        "temporal de una imagen. Solo hace falta cuando el consumidor del enlace no ve "
+        "el mismo anfitrion que el backend, que es el caso dentro de Docker Compose. "
+        "Omitido, se firma contra el operativo.",
+    )
+    # `repr=False` en las dos credenciales, y `SecretStr` ademas en el secreto:
+    # la configuracion se registra al arrancar (requisito S-08).
+    storage_access_key: Annotated[str | None, Field(repr=False)] = Field(
+        default=None,
+        description="Clave de acceso. Ausente en produccion, donde se usa el rol de "
+        "ejecucion de la Lambda (requisito S-01).",
+    )
+    storage_secret_key: Annotated[SecretStr | None, Field(repr=False)] = Field(
+        default=None,
+        description="Secreto de acceso. Nunca se imprime.",
+    )
+    storage_access_ttl_seconds: int = Field(
+        default=900,
+        ge=60,
+        le=604800,
+        description="Validez del enlace temporal de un medio. La politica de expiracion "
+        "de produccion la fija `Task/030` (D-08); aqui es configuracion, no una "
+        "constante enterrada en el adaptador.",
+    )
+
     @model_validator(mode="after")
     def _reject_unsafe_production_settings(self) -> Self:
         """Impide combinaciones peligrosas de configuracion."""
@@ -113,6 +173,59 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "BLOG_DATABASE_ECHO no puede estar activo con BLOG_APP_ENV=production"
                 )
+            if self.storage_provider == "minio":
+                raise ValueError(
+                    "BLOG_STORAGE_PROVIDER=minio no es valido con BLOG_APP_ENV=production: "
+                    "MinIO es el almacenamiento del entorno local"
+                )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_access_endpoint(self) -> Self:
+        """Comprueba la forma del endpoint de acceso, si se declara.
+
+        Fail-fast (requisito T-01): un valor invalido debe romper el arranque y
+        no el primer enlace que se emita, que es cuando lo veria un visitante.
+
+        **No** se exige: sin endpoint de acceso se firma contra el operativo,
+        que es lo correcto cuando los dos coinciden —y es el caso de produccion,
+        donde el endpoint lo resuelve el SDK—.
+        """
+        if self.storage_access_endpoint_url is None:
+            return self
+        partes = urlsplit(self.storage_access_endpoint_url.strip())
+        if partes.scheme not in {"http", "https"} or not partes.hostname:
+            raise ValueError(
+                "BLOG_STORAGE_ACCESS_ENDPOINT_URL debe ser una URL HTTP explicita, "
+                "por ejemplo 'http://localhost:9000'"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _require_local_storage_credentials(self) -> Self:
+        """Exige lo que `minio` no puede resolver por su cuenta.
+
+        La obligatoriedad depende del proveedor y por eso no se expresa como
+        campo obligatorio: `s3` **si** puede prescindir de claves explicitas,
+        porque en produccion las aporta el rol de ejecucion. Exigirselas a los
+        dos empujaria a poner una credencial estatica donde no hace falta.
+        """
+        if self.storage_provider != "minio":
+            return self
+        faltantes = [
+            nombre
+            for nombre, valor in (
+                ("endpoint_url", self.storage_endpoint_url),
+                ("access_key", self.storage_access_key),
+                ("secret_key", self.storage_secret_key),
+            )
+            if valor is None
+        ]
+        if faltantes:
+            raise ValueError(
+                "BLOG_STORAGE_PROVIDER=minio exige "
+                + ", ".join(f"BLOG_STORAGE_{nombre.upper()}" for nombre in faltantes)
+            )
         return self
 
     @property

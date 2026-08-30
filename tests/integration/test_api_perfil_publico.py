@@ -53,7 +53,13 @@ def test_profile_existente_expone_exactamente_la_identidad_publica(
     }
     assert cuerpo["full_name"] == "Ada Lovelace"
     assert cuerpo["biography"] == "# Biografia\n\nMarkdown fuente."
-    assert cuerpo["photo"] == {"alt_text": "Retrato", "width": 640, "height": 640}
+    # `access_url` se anade en `Task/010` (D-009-O, cerrada). El enlace lleva
+    # firma y marca de tiempo, asi que no puede compararse literal: se comprueba
+    # su presencia y se mantiene cerrado el conjunto de campos.
+    medio_publico = cuerpo["photo"]
+    sin_el_enlace = {c: v for c, v in medio_publico.items() if c != "access_url"}
+    assert sin_el_enlace == {"alt_text": "Retrato", "width": 640, "height": 640}
+    assert medio_publico["access_url"].startswith("http")
     assert "object_key" not in cuerpo["photo"]
     assert cuerpo["social_links"] == [{"label": "GitHub", "url": "https://example.invalid/github"}]
 

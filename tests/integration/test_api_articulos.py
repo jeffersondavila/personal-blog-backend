@@ -14,6 +14,7 @@ de esas cosas se demuestra con un doble
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
@@ -309,7 +310,14 @@ def test_el_elemento_de_listado_lleva_lo_que_la_pantalla_necesita(
     assert elemento["summary"] == "Resumen breve"
     assert elemento["published_at"].startswith("2026-08-01T12:00:00")
     assert elemento["tags"] == [{"slug": "docker", "name": "Docker", "description": None}]
-    assert elemento["cover"] == {"alt_text": "Una portada", "width": 800, "height": 600}
+    # `access_url` se anade en `Task/010` (D-009-O, cerrada). Se compara la parte
+    # estable campo a campo y el enlace por separado: su valor lleva una firma y
+    # una marca de tiempo, asi que no puede escribirse literal en una expectativa.
+    portada_publica = elemento["cover"]
+    assert portada_publica["alt_text"] == "Una portada"
+    assert (portada_publica["width"], portada_publica["height"]) == (800, 600)
+    assert set(portada_publica) == {"alt_text", "width", "height", "access_url"}
+    assert portada_publica["access_url"].startswith("http")
 
 
 def test_el_listado_no_transporta_el_markdown_completo(
@@ -339,14 +347,42 @@ def test_el_listado_no_expone_campos_internos(
 def test_la_portada_no_expone_la_clave_del_objeto(
     sesion_de_pruebas: Session, cliente_de_la_api: TestClient
 ) -> None:
-    """D-009-O e invariante 9 de CONTENT_MODEL.md."""
+    """D-009-O e invariante 9 de CONTENT_MODEL.md, **precisada en `Task/010`**.
+
+    La invariante 9 prohibe exponer claves internas de objeto *"sin control"*, y
+    hasta `Task/010` esta prueba lo comprobaba de la forma mas simple posible:
+    que la clave no apareciera en ninguna parte del cuerpo. Con el campo de
+    acceso ya presente eso deja de ser expresable, y no por un descuido:
+
+    Una URL prefirmada **es** `<endpoint>/<bucket>/<object_key>?X-Amz-...`. No
+    existe ninguna variante del mecanismo que omita la clave; es la ruta del
+    recurso que se esta firmando. Y el mecanismo no es opcional:
+    `CONTENT_MODEL.md` seccion 3.7 y `security-boundaries.md` lo imponen —el
+    navegador alcanza el almacenamiento *"unicamente mediante URL prefirmada
+    emitida por el backend"*—.
+
+    La garantia real, que es la que esta prueba fija ahora (decision D-010-Q):
+
+    1. **Ningun campo del contrato transporta la clave** como dato reutilizable.
+       Eso es lo que la invariante 9 protege y lo que convertiria la clave en
+       parte del contrato `v1`.
+    2. Fuera del enlace firmado, la clave **no aparece**.
+    3. Conocerla no da acceso: el bucket es privado, hace falta la firma, y las
+       claves son no predecibles (D-010-G), asi que ver una no permite adivinar
+       otra.
+    """
     sesion_de_pruebas.add(articulo("con-portada", portada=medio(clave="portadas/secreta.png")))
     sesion_de_pruebas.flush()
 
-    cuerpo = cliente_de_la_api.get(LISTADO).text
+    cuerpo: dict[str, Any] = cliente_de_la_api.get(LISTADO).json()
 
-    assert "portadas/secreta.png" not in cuerpo
-    assert "object_key" not in cuerpo
+    portada = cuerpo["items"][0]["cover"]
+    assert "object_key" not in portada
+    # La clave viaja dentro del enlace firmado, y solo ahi.
+    assert "portadas/secreta.png" in portada["access_url"]
+    sin_enlaces = json.dumps(cuerpo).replace(portada["access_url"], "")
+    assert "portadas/secreta.png" not in sin_enlaces
+    assert "object_key" not in sin_enlaces
 
 
 # --- C-01..C-04: detalle ---------------------------------------------------

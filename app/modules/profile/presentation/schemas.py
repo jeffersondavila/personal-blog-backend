@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from app.modules.media.presentation.acceso import AccesoAMedios
 from app.modules.media.presentation.schemas import MedioPublico
 from app.modules.profile.infrastructure.models import Profile, ProfileSocialLink
 
@@ -32,13 +33,13 @@ class ProfilePublico(BaseModel):
     social_links: list[EnlaceSocialPublico] = Field(default_factory=list)
 
     @classmethod
-    def de_modelo(cls, profile: Profile) -> ProfilePublico:
+    def de_modelo(cls, profile: Profile, acceso: AccesoAMedios) -> ProfilePublico:
         return cls(
             full_name=profile.full_name,
             headline=profile.headline,
             biography=profile.biography,
             contact_email=profile.contact_email,
-            photo=MedioPublico.de_modelo(profile.photo),
+            photo=MedioPublico.de_modelo(profile.photo, acceso),
             seo_title=profile.seo_title,
             seo_description=profile.seo_description,
             social_links=[EnlaceSocialPublico.de_modelo(item) for item in profile.social_links],

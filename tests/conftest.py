@@ -33,7 +33,28 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.shared.configuration import Settings, build_settings
-from tests import FAKE_DATABASE_URL
+from tests import (
+    ENTORNO_MINIMO_DE_PRUEBAS,
+    FAKE_DATABASE_URL,
+    FAKE_STORAGE_ACCESS_KEY,
+    FAKE_STORAGE_BUCKET,
+    FAKE_STORAGE_ENDPOINT_URL,
+    FAKE_STORAGE_SECRET_KEY,
+)
+
+# Fixtures del harness de almacenamiento de objetos (`Task/010`). Se importan
+# aqui —y no se definen aqui— para que vivan en un modulo propio que la guarda
+# estructural `tests/test_guarda_del_almacenamiento_de_pruebas.py` pueda
+# inspeccionar entero. Importarlas en un `conftest` es lo que las hace visibles
+# tanto para `tests/contract/` como para `tests/integration/`, que es donde se
+# ejercitan: el contrato en el primero, la persistencia real en el segundo.
+from tests.almacenamiento_de_pruebas import (  # noqa: F401 - el import ES el registro
+    almacenamiento,
+    almacenamiento_minio,
+    almacenamiento_s3,
+    destino_de_almacenamiento_verificado,
+    prefijo_de_la_prueba,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -41,19 +62,20 @@ def _isolated_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """Deja el entorno de cada prueba en el mismo estado controlado.
 
     Borra toda variable `BLOG_*` —incluida la que haya dejado puesta otra
-    prueba— y **repone** la URL ficticia obligatoria. Reponerla no es un detalle:
-    `BLOG_DATABASE_URL` es el unico campo sin valor por defecto, asi que un
-    proceso sin ella no puede construir la configuracion. `app/main.py` la
-    necesita al importarse, y desde `Task/005.7` ese import ocurre dentro de una
-    fixture, no durante la collection.
+    prueba— y **repone** las obligatorias. Reponerlas no es un detalle: la URL de
+    la base de datos y el bucket del almacenamiento son los campos sin valor por
+    defecto, asi que un proceso sin ellos no puede construir la configuracion.
+    `app/main.py` los necesita al importarse, y desde `Task/005.7` ese import
+    ocurre dentro de una fixture, no durante la collection.
 
-    Las pruebas que necesitan comprobar la ausencia de la variable la borran
+    Las pruebas que necesitan comprobar la ausencia de una variable la borran
     ellas mismas con `monkeypatch.delenv`, que es explicito y local.
     """
     for name in list(os.environ):
         if name.upper().startswith("BLOG_"):
             monkeypatch.delenv(name, raising=False)
-    monkeypatch.setenv("BLOG_DATABASE_URL", FAKE_DATABASE_URL)
+    for nombre, valor in ENTORNO_MINIMO_DE_PRUEBAS.items():
+        monkeypatch.setenv(nombre, valor)
 
 
 @pytest.fixture
@@ -73,6 +95,14 @@ def settings_factory() -> Any:
             "app_env": "test",
             "database_url": FAKE_DATABASE_URL,
             "log_format": "text",
+            # El almacenamiento tambien tiene campos obligatorios desde
+            # `Task/010`. Se dan por defecto y siguen siendo sobrescribibles:
+            # una prueba que hable de almacenamiento fija los suyos.
+            "storage_provider": "minio",
+            "storage_bucket": FAKE_STORAGE_BUCKET,
+            "storage_endpoint_url": FAKE_STORAGE_ENDPOINT_URL,
+            "storage_access_key": FAKE_STORAGE_ACCESS_KEY,
+            "storage_secret_key": FAKE_STORAGE_SECRET_KEY,
             **overrides,
             # Despues de `overrides` a proposito: el aislamiento no es
             # negociable por quien llama al factory.

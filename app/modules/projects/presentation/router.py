@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.api.filtros_publicos import FiltrosDeContenido, filtros_de_contenido
 from app.api.query_params import rechazar_parametros_desconocidos
+from app.modules.media.presentation.acceso import AccesoAMediosDependencia
 from app.modules.projects.infrastructure.queries import (
     contar_proyectos_publicados,
     listar_proyectos_publicados,
@@ -30,13 +31,14 @@ router = APIRouter(
 @router.get("/projects", response_model=Pagina[ProyectoDeListado])
 def listar_proyectos(
     sesion: Annotated[Session, Depends(get_session)],
+    acceso: AccesoAMediosDependencia,
     parametros: Annotated[ParametrosDePagina, Depends(parametros_de_pagina)],
     filtros: Annotated[FiltrosDeContenido, Depends(filtros_de_contenido)],
 ) -> Pagina[ProyectoDeListado]:
     total = contar_proyectos_publicados(sesion, filtros=filtros)
     projects = listar_proyectos_publicados(sesion, parametros=parametros, filtros=filtros)
     return Pagina.crear(
-        items=[ProyectoDeListado.de_modelo(project) for project in projects],
+        items=[ProyectoDeListado.de_modelo(project, acceso) for project in projects],
         parametros=parametros,
         total=total,
     )
@@ -50,8 +52,9 @@ def listar_proyectos(
 def obtener_proyecto(
     slug: str,
     sesion: Annotated[Session, Depends(get_session)],
+    acceso: AccesoAMediosDependencia,
 ) -> ProyectoDetallado:
     project = obtener_proyecto_publicado(sesion, slug=slug)
     if project is None:
         raise ResourceNotFoundError("El recurso solicitado no existe.")
-    return ProyectoDetallado.de_modelo(project)
+    return ProyectoDetallado.de_modelo(project, acceso)

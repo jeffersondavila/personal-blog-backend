@@ -70,7 +70,13 @@ def test_listado_publica_solo_projects_visibles_con_sus_campos(
     }
     assert item["technologies"] == ["Python", "PostgreSQL"]
     assert item["project_status"] == "paused"
-    assert item["cover"] == {"alt_text": "Portada", "width": 1200, "height": 630}
+    # `access_url` se anade en `Task/010` (D-009-O, cerrada). El enlace lleva
+    # firma y marca de tiempo, asi que no puede compararse literal: se comprueba
+    # su presencia y se mantiene cerrado el conjunto de campos.
+    medio_publico = item["cover"]
+    sin_el_enlace = {c: v for c, v in medio_publico.items() if c != "access_url"}
+    assert sin_el_enlace == {"alt_text": "Portada", "width": 1200, "height": 630}
+    assert medio_publico["access_url"].startswith("http")
     assert "object_key" not in item["cover"]
 
 

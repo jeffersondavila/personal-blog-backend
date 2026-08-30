@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from app.api.filtros_publicos import FiltrosDeContenido, filtros_de_contenido
 from app.api.query_params import rechazar_parametros_desconocidos
+from app.modules.media.presentation.acceso import AccesoAMediosDependencia
 from app.modules.posts.infrastructure.queries import (
     contar_articulos_publicados,
     listar_articulos_publicados,
@@ -60,6 +61,7 @@ router = APIRouter(
 )
 def listar_articulos(
     sesion: Annotated[Session, Depends(get_session)],
+    acceso: AccesoAMediosDependencia,
     parametros: Annotated[ParametrosDePagina, Depends(parametros_de_pagina)],
     filtros: Annotated[FiltrosDeContenido, Depends(filtros_de_contenido)],
 ) -> Pagina[PostDeListado]:
@@ -67,7 +69,7 @@ def listar_articulos(
     total = contar_articulos_publicados(sesion, filtros=filtros)
     articulos = listar_articulos_publicados(sesion, parametros=parametros, filtros=filtros)
     return Pagina.crear(
-        items=[PostDeListado.de_modelo(articulo) for articulo in articulos],
+        items=[PostDeListado.de_modelo(articulo, acceso) for articulo in articulos],
         parametros=parametros,
         total=total,
     )
@@ -91,6 +93,7 @@ def listar_articulos(
 def obtener_articulo(
     slug: str,
     sesion: Annotated[Session, Depends(get_session)],
+    acceso: AccesoAMediosDependencia,
 ) -> PostDetallado:
     """Devuelve el articulo publicado con ese slug."""
     articulo = obtener_articulo_publicado(sesion, slug=slug)
@@ -99,4 +102,4 @@ def obtener_articulo(
         # borrador y archivado. Un texto distinto por caso permitiria enumerar
         # borradores probando slugs (api-contracts.md seccion 3).
         raise ResourceNotFoundError("El recurso solicitado no existe.")
-    return PostDetallado.de_modelo(articulo)
+    return PostDetallado.de_modelo(articulo, acceso)

@@ -80,7 +80,15 @@ import os
 import sys
 
 sys.path.insert(0, os.environ["RAIZ_DEL_REPOSITORIO"])
+# El minimo obligatorio para que `Settings` sea construible. Se fija aqui —y no
+# en el `.env` intruso— a proposito: lo que la prueba mide es si los valores
+# INTRUSOS (`app_name`, `log_level`, `app_debug`) llegan, no si la aplicacion
+# arranca. Desde `Task/010` ese minimo incluye el almacenamiento de objetos.
 os.environ["BLOG_DATABASE_URL"] = "postgresql://usuario:clave@localhost:5432/base_de_prueba"
+os.environ["BLOG_STORAGE_BUCKET"] = "bucket-de-prueba"
+os.environ["BLOG_STORAGE_ENDPOINT_URL"] = "http://almacenamiento.invalid:9000"
+os.environ["BLOG_STORAGE_ACCESS_KEY"] = "clave_de_prueba"
+os.environ["BLOG_STORAGE_SECRET_KEY"] = "secreto_de_prueba"
 
 import app.main
 
