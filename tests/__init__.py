@@ -38,11 +38,13 @@ Las tres medidas son complementarias; ninguna sustituye a las otras:
 2. **Se neutraliza el `.env` para todo el proceso de pruebas**, poniendo
    `env_file=None` en `model_config`. Es la unica medida que alcanza a la
    collection y a `get_settings()`.
-3. **Se fija una `BLOG_DATABASE_URL` ficticia**, obligatoria para que la
-   configuracion sea valida. Ninguna prueba unitaria se conecta a ella: las que
-   necesitan PostgreSQL viven en `tests/integration/` y usan
-   `PERSONAL_BLOG_TEST_DATABASE_URL`, que **no** lleva el prefijo `BLOG_` a
-   proposito y sobrevive al paso 1.
+3. **Se fijan valores ficticios para los campos obligatorios** —la URL de la
+   base de datos y la configuracion del almacenamiento de objetos—, sin los
+   cuales `Settings` no seria construible. Ninguna prueba unitaria los usa
+   contra un servicio real: las que necesitan PostgreSQL o MinIO viven en
+   `tests/integration/` y `tests/contract/` y usan variables
+   `PERSONAL_BLOG_TEST_*`, que **no** llevan el prefijo `BLOG_` a proposito y
+   sobreviven al paso 1.
 
 El comportamiento de produccion no cambia: `model_config` se modifica en el
 proceso que importa `tests`, y la aplicacion real sigue leyendo su `.env` como
@@ -59,6 +61,33 @@ import os
 
 #: URL ficticia, sintacticamente valida. No corresponde a ninguna base real.
 FAKE_DATABASE_URL = "postgresql://usuario_de_prueba:clave_de_prueba@localhost:5432/base_de_prueba"
+
+#: Configuracion ficticia del almacenamiento de objetos (`Task/010`).
+#:
+#: `BLOG_STORAGE_BUCKET` es, junto con `BLOG_DATABASE_URL`, uno de los dos
+#: campos sin valor por defecto: sin el, ningun `Settings()` de este proceso
+#: seria valido y la aplicacion no podria construirse. Se repone aqui por la
+#: misma razon y con el mismo alcance que la URL de base de datos.
+#:
+#: El anfitrion usa el TLD reservado `.invalid`, que por definicion nunca
+#: resuelve (RFC 2606). Asi ninguna prueba unitaria puede alcanzar por accidente
+#: el MinIO real del entorno local: las que lo necesitan viven en el harness de
+#: `tests/almacenamiento_de_pruebas.py` y usan variables `PERSONAL_BLOG_TEST_*`,
+#: que **no** llevan el prefijo `BLOG_` y sobreviven a la limpieza de abajo.
+FAKE_STORAGE_BUCKET = "bucket-de-prueba"
+FAKE_STORAGE_ENDPOINT_URL = "http://almacenamiento.invalid:9000"
+FAKE_STORAGE_ACCESS_KEY = "clave_de_prueba"
+FAKE_STORAGE_SECRET_KEY = "secreto_de_prueba"
+
+#: Variables que el proceso de pruebas debe tener siempre puestas para que la
+#: configuracion sea construible.
+ENTORNO_MINIMO_DE_PRUEBAS = {
+    "BLOG_DATABASE_URL": FAKE_DATABASE_URL,
+    "BLOG_STORAGE_BUCKET": FAKE_STORAGE_BUCKET,
+    "BLOG_STORAGE_ENDPOINT_URL": FAKE_STORAGE_ENDPOINT_URL,
+    "BLOG_STORAGE_ACCESS_KEY": FAKE_STORAGE_ACCESS_KEY,
+    "BLOG_STORAGE_SECRET_KEY": FAKE_STORAGE_SECRET_KEY,
+}
 
 
 def _aislar_el_proceso_de_pruebas() -> None:
@@ -82,9 +111,16 @@ def _aislar_el_proceso_de_pruebas() -> None:
     # de este proceso busque un `.env`.
     Settings.model_config["env_file"] = None
 
-    os.environ["BLOG_DATABASE_URL"] = FAKE_DATABASE_URL
+    os.environ.update(ENTORNO_MINIMO_DE_PRUEBAS)
 
 
 _aislar_el_proceso_de_pruebas()
 
-__all__ = ["FAKE_DATABASE_URL"]
+__all__ = [
+    "ENTORNO_MINIMO_DE_PRUEBAS",
+    "FAKE_DATABASE_URL",
+    "FAKE_STORAGE_ACCESS_KEY",
+    "FAKE_STORAGE_BUCKET",
+    "FAKE_STORAGE_ENDPOINT_URL",
+    "FAKE_STORAGE_SECRET_KEY",
+]

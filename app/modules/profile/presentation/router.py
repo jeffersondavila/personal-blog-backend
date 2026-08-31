@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.api.query_params import rechazar_parametros_desconocidos
+from app.modules.media.presentation.acceso import AccesoAMediosDependencia
 from app.modules.profile.infrastructure.queries import obtener_perfil
 from app.modules.profile.presentation.schemas import ProfilePublico
 from app.shared.database import get_session
@@ -27,8 +28,11 @@ router = APIRouter(
     summary="Perfil publico",
     responses={404: {"model": RespuestaDeError, "description": "El perfil aun no existe."}},
 )
-def leer_perfil(sesion: Annotated[Session, Depends(get_session)]) -> ProfilePublico:
+def leer_perfil(
+    sesion: Annotated[Session, Depends(get_session)],
+    acceso: AccesoAMediosDependencia,
+) -> ProfilePublico:
     profile = obtener_perfil(sesion)
     if profile is None:
         raise ResourceNotFoundError("El recurso solicitado no existe.")
-    return ProfilePublico.de_modelo(profile)
+    return ProfilePublico.de_modelo(profile, acceso)

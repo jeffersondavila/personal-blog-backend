@@ -29,6 +29,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from app.modules.media.presentation.acceso import AccesoAMedios
 from app.modules.media.presentation.schemas import MedioPublico
 from app.modules.posts.infrastructure.models import Post
 from app.modules.tags.presentation.schemas import EtiquetaPublica
@@ -48,7 +49,7 @@ class PostDeListado(BaseModel):
     cover: MedioPublico | None = Field(default=None, description="Portada, si tiene.")
 
     @classmethod
-    def de_modelo(cls, articulo: Post) -> PostDeListado:
+    def de_modelo(cls, articulo: Post, acceso: AccesoAMedios) -> PostDeListado:
         """Proyecta el modelo ORM sobre los campos publicos del listado."""
         return cls(
             slug=articulo.slug,
@@ -56,7 +57,7 @@ class PostDeListado(BaseModel):
             summary=articulo.summary,
             published_at=articulo.published_at,
             tags=[EtiquetaPublica.de_modelo(etiqueta) for etiqueta in articulo.tags],
-            cover=MedioPublico.de_modelo(articulo.cover),
+            cover=MedioPublico.de_modelo(articulo.cover, acceso),
         )
 
 
@@ -71,7 +72,7 @@ class PostDetallado(PostDeListado):
     seo_description: str | None = Field(default=None, description="Descripcion para buscadores.")
 
     @classmethod
-    def de_modelo(cls, articulo: Post) -> PostDetallado:
+    def de_modelo(cls, articulo: Post, acceso: AccesoAMedios) -> PostDetallado:
         """Proyecta el modelo ORM sobre los campos publicos del detalle."""
         return cls(
             slug=articulo.slug,
@@ -79,7 +80,7 @@ class PostDetallado(PostDeListado):
             summary=articulo.summary,
             published_at=articulo.published_at,
             tags=[EtiquetaPublica.de_modelo(etiqueta) for etiqueta in articulo.tags],
-            cover=MedioPublico.de_modelo(articulo.cover),
+            cover=MedioPublico.de_modelo(articulo.cover, acceso),
             content=articulo.content,
             reading_time_minutes=minutos_de_lectura(articulo.content),
             seo_title=articulo.seo_title,

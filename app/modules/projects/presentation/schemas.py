@@ -6,6 +6,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from app.modules.media.presentation.acceso import AccesoAMedios
 from app.modules.media.presentation.schemas import MedioPublico
 from app.modules.projects.domain import ProjectWorkStatus
 from app.modules.projects.infrastructure.models import Project
@@ -26,14 +27,14 @@ class ProyectoDeListado(BaseModel):
     project_status: ProjectWorkStatus
 
     @classmethod
-    def de_modelo(cls, project: Project) -> ProyectoDeListado:
+    def de_modelo(cls, project: Project, acceso: AccesoAMedios) -> ProyectoDeListado:
         return cls(
             slug=project.slug,
             title=project.title,
             summary=project.summary,
             published_at=project.published_at,
             tags=[EtiquetaPublica.de_modelo(tag) for tag in project.tags],
-            cover=MedioPublico.de_modelo(project.cover),
+            cover=MedioPublico.de_modelo(project.cover, acceso),
             technologies=[str(item) for item in project.technologies],
             repository_url=project.repository_url,
             demo_url=project.demo_url,
@@ -48,8 +49,8 @@ class ProyectoDetallado(ProyectoDeListado):
     seo_description: str | None = None
 
     @classmethod
-    def de_modelo(cls, project: Project) -> ProyectoDetallado:
-        base = ProyectoDeListado.de_modelo(project)
+    def de_modelo(cls, project: Project, acceso: AccesoAMedios) -> ProyectoDetallado:
+        base = ProyectoDeListado.de_modelo(project, acceso)
         return cls(
             **base.model_dump(),
             content=project.content,

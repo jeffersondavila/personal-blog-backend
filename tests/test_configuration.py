@@ -86,18 +86,24 @@ def test_una_configuracion_de_produccion_valida_se_construye(settings_factory: A
     Sin este caso solo estaba probada la rama que lanza `ValueError`: una
     validacion que rechazara *toda* configuracion `production` habria pasado la
     suite igualmente.
+
+    Desde `Task/010` una configuracion de produccion valida incluye ademas el
+    almacenamiento de produccion: `minio` esta prohibido con
+    `BLOG_APP_ENV=production` porque es el almacenamiento del entorno local.
     """
     configuracion = settings_factory(
         app_env="production",
         app_debug=False,
         database_echo=False,
         log_format="json",
+        storage_provider="s3",
     )
 
     assert configuracion.app_env == "production"
     assert configuracion.app_debug is False
     assert configuracion.database_echo is False
     assert configuracion.log_format == "json"
+    assert configuracion.storage_provider == "s3"
 
 
 def test_la_configuracion_de_prueba_ignora_el_dotenv_del_desarrollador(

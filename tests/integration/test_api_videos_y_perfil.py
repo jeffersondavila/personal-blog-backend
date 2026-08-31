@@ -81,7 +81,13 @@ def test_el_listado_de_videos_basta_para_reproducirlos(
     assert elemento["video_url"] == "https://ejemplo.invalid/watch"
     assert elemento["embed_reference"] == "abc123"
     assert elemento["duration_seconds"] == 615
-    assert elemento["thumbnail"] == {"alt_text": "Miniatura", "width": None, "height": None}
+    # `access_url` se anade en `Task/010` (D-009-O, cerrada). El enlace lleva
+    # firma y marca de tiempo, asi que no puede compararse literal: se comprueba
+    # su presencia y se mantiene cerrado el conjunto de campos.
+    medio_publico = elemento["thumbnail"]
+    sin_el_enlace = {c: v for c, v in medio_publico.items() if c != "access_url"}
+    assert sin_el_enlace == {"alt_text": "Miniatura", "width": None, "height": None}
+    assert medio_publico["access_url"].startswith("http")
 
 
 def test_un_video_no_tiene_contenido_markdown(
@@ -163,7 +169,13 @@ def test_el_perfil_devuelve_la_identidad_publica(
     # Markdown fuente: `Task/009` no renderiza (ADR-005).
     assert cuerpo["biography"] == "# Quien soy\n\nTexto en Markdown."
     assert cuerpo["contact_email"] == "contacto@ejemplo.invalid"
-    assert cuerpo["photo"] == {"alt_text": "Retrato", "width": None, "height": None}
+    # `access_url` se anade en `Task/010` (D-009-O, cerrada). El enlace lleva
+    # firma y marca de tiempo, asi que no puede compararse literal: se comprueba
+    # su presencia y se mantiene cerrado el conjunto de campos.
+    medio_publico = cuerpo["photo"]
+    sin_el_enlace = {c: v for c, v in medio_publico.items() if c != "access_url"}
+    assert sin_el_enlace == {"alt_text": "Retrato", "width": None, "height": None}
+    assert medio_publico["access_url"].startswith("http")
     assert cuerpo["seo_title"] == "Quien soy"
 
 

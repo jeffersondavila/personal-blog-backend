@@ -15,6 +15,7 @@ from app.modules.book_reviews.infrastructure.queries import (
     obtener_review_publicada,
 )
 from app.modules.book_reviews.presentation.schemas import ReviewDeListado, ReviewDetallada
+from app.modules.media.presentation.acceso import AccesoAMediosDependencia
 from app.shared.database import get_session
 from app.shared.errors import ResourceNotFoundError
 from app.shared.errors.schemas import RESPUESTAS_DE_ERROR, RespuestaDeError
@@ -30,13 +31,14 @@ router = APIRouter(
 @router.get("/book-reviews", response_model=Pagina[ReviewDeListado])
 def listar_reviews(
     sesion: Annotated[Session, Depends(get_session)],
+    acceso: AccesoAMediosDependencia,
     parametros: Annotated[ParametrosDePagina, Depends(parametros_de_pagina)],
     filtros: Annotated[FiltrosDeContenido, Depends(filtros_de_contenido)],
 ) -> Pagina[ReviewDeListado]:
     total = contar_reviews_publicadas(sesion, filtros=filtros)
     reviews = listar_reviews_publicadas(sesion, parametros=parametros, filtros=filtros)
     return Pagina.crear(
-        items=[ReviewDeListado.de_modelo(review) for review in reviews],
+        items=[ReviewDeListado.de_modelo(review, acceso) for review in reviews],
         parametros=parametros,
         total=total,
     )
@@ -50,8 +52,9 @@ def listar_reviews(
 def obtener_review(
     slug: str,
     sesion: Annotated[Session, Depends(get_session)],
+    acceso: AccesoAMediosDependencia,
 ) -> ReviewDetallada:
     review = obtener_review_publicada(sesion, slug=slug)
     if review is None:
         raise ResourceNotFoundError("El recurso solicitado no existe.")
-    return ReviewDetallada.de_modelo(review)
+    return ReviewDetallada.de_modelo(review, acceso)
