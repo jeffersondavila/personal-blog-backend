@@ -26,10 +26,23 @@ class ApplicationError(Exception):
     code: str = "application_error"
     status_code: int = HTTPStatus.INTERNAL_SERVER_ERROR
 
-    def __init__(self, message: str, *, details: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        details: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         super().__init__(message)
         self.message = message
         self.details: dict[str, Any] = details or {}
+        #: Cabeceras que la respuesta de error debe llevar.
+        #:
+        #: Existe porque algunos codigos del contrato **son** su cabecera:
+        #: `429 Too Many Requests` sin `Retry-After` obliga al cliente a adivinar
+        #: cuando puede volver (api-contracts.md seccion 8). Anadida en
+        #: `Task/011`; sigue sin transportar nada interno, solo protocolo.
+        self.headers: dict[str, str] = headers or {}
 
 
 class ResourceNotFoundError(ApplicationError):

@@ -50,7 +50,10 @@ def test_openapi_no_declara_endpoints_no_implementados(client: TestClient) -> No
     corresponde a las tareas siguientes:
 
     - `/ready` es de `Task/017`.
-    - Los endpoints administrativos, de `Task/011` y `Task/012`.
+    - El **CRUD** administrativo, de `Task/012`. La autenticacion —los tres
+      endpoints de `/admin/auth`— si existe desde `Task/011`, asi que la
+      expectativa se estrecha a lo que sigue sin implementarse en lugar de
+      desaparecer.
 
     La comprobacion **exacta** del conjunto de rutas de la API publica vive en
     `tests/contract/test_openapi_publica.py`, junto al resto del contrato HTTP.
@@ -61,6 +64,9 @@ def test_openapi_no_declara_endpoints_no_implementados(client: TestClient) -> No
 
     assert "/health" in rutas
     assert "/ready" not in rutas, "`/ready` es de `Task/017` y no debe existir todavia"
-    assert not [ruta for ruta in rutas if "admin" in ruta], (
-        "la API administrativa es de `Task/011` y `Task/012`"
-    )
+    administrativas = {ruta for ruta in rutas if "admin" in ruta}
+    assert administrativas == {
+        "/api/v1/admin/auth/login",
+        "/api/v1/admin/auth/logout",
+        "/api/v1/admin/auth/me",
+    }, "el CRUD administrativo es de `Task/012` y no debe existir todavia"

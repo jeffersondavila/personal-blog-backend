@@ -163,6 +163,119 @@ class Settings(BaseSettings):
         "constante enterrada en el adaptador.",
     )
 
+    # --- Autenticacion administrativa (`Task/011`) -------------------------
+    #
+    # La decision D-011-B —sesion opaca en el servidor con cookie `HttpOnly`—
+    # **no necesita ningun secreto de firma**, y por eso no hay ninguno aqui.
+    # Reservar un `JWT_SECRET` "por si acaso" no es prudencia: es un secreto que
+    # alguien tendria que custodiar, rotar y explicar sin que nada lo use.
+    auth_session_ttl_seconds: int = Field(
+        default=43200,
+        ge=60,
+        le=604800,
+        description="Duracion ABSOLUTA de la sesion administrativa, en segundos. "
+        "12 h por defecto. No hay renovacion deslizante ni caducidad por inactividad.",
+    )
+    auth_cookie_secure: bool = Field(
+        default=True,
+        description="Marca `Secure` de la cookie. Solo puede desactivarse fuera de "
+        "produccion, donde el entorno local sirve por HTTP.",
+    )
+    auth_max_failed_attempts: int = Field(
+        default=5,
+        ge=1,
+        le=100,
+        description="Fallos consecutivos que activan el bloqueo temporal de la cuenta.",
+    )
+    auth_lockout_seconds: int = Field(
+        default=900,
+        ge=1,
+        le=86400,
+        description="Duracion del bloqueo temporal. Nunca es permanente: hay un solo "
+        "administrador y dejarlo fuera para siempre seria peor que el ataque.",
+    )
+    auth_rate_limit_max_attempts: int = Field(
+        default=10,
+        ge=1,
+        le=1000,
+        description="Intentos de acceso admitidos por ventana y por origen.",
+    )
+    auth_rate_limit_window_seconds: int = Field(
+        default=300,
+        ge=1,
+        le=86400,
+        description="Ventana fija del limite de tasa del acceso, en segundos.",
+    )
+    admin_allowed_origins: str = Field(
+        default="",
+        description="Origenes del panel administrativo, separados por comas. Nunca `*`. "
+        "Vacio significa que ninguna peticion con `Origin` puede cambiar estado: es "
+        "fail-closed a proposito, porque no existe un origen por defecto seguro.",
+    )
+    trusted_proxy_hop_count: int = Field(
+        default=0,
+        ge=0,
+        le=10,
+        description="Numero de proxies de confianza delante del backend. Con 0 se IGNORA "
+        "`X-Forwarded-For` por completo: es una cabecera que cualquier cliente puede "
+        "escribir, y creersela permitiria falsificar una IP por intento.",
+    )
+
+    @model_validator(mode="after")
+    def _validate_admin_origins(self) -> Self:
+        """Comprueba que cada origen declarado es realmente un origen.
+
+        Un origen es **esquema + anfitrion + puerto**: sin ruta, sin consulta y
+        sin barra final. Comparar la cabecera `Origin` recibida con una cadena
+        que no tiene esa forma no falla de manera ruidosa —falla **rechazando
+        siempre**—, y eso se descubre el dia que el panel deja de entrar.
+
+        El comodin se rechaza sin excepciones (requisito S-04): junto a una
+        cookie de sesion es la combinacion que ningun navegador deberia tener que
+        rechazar en nuestro lugar.
+        """
+        for origen in self.origenes_administrativos_permitidos:
+            if origen == "*":
+                raise ValueError(
+                    "BLOG_ADMIN_ALLOWED_ORIGINS no admite '*': un origen comodin con "
+                    "credenciales esta prohibido (requisito S-04)"
+                )
+            partes = urlsplit(origen)
+            if (
+                partes.scheme not in {"http", "https"}
+                or not partes.hostname
+                or partes.path
+                or partes.query
+                or partes.fragment
+                or partes.username
+            ):
+                raise ValueError(
+                    "BLOG_ADMIN_ALLOWED_ORIGINS debe listar origenes con la forma "
+                    "'esquema://anfitrion[:puerto]', sin ruta ni barra final; "
+                    "valor rechazado en la posicion correspondiente"
+                )
+        return self
+
+    @property
+    def origenes_administrativos_permitidos(self) -> tuple[str, ...]:
+        """Origenes declarados, ya separados y sin entradas vacias."""
+        return tuple(
+            fragmento.strip()
+            for fragmento in self.admin_allowed_origins.split(",")
+            if fragmento.strip()
+        )
+
+    @property
+    def auth_cookie_path(self) -> str:
+        """`Path` de la cookie de sesion: el prefijo administrativo.
+
+        Se deriva del prefijo configurado en lugar de escribirse a mano para que
+        no puedan separarse. Es higiene de exposicion —la cookie no viaja a los
+        endpoints publicos—, **no** una frontera de seguridad: quien la aplica es
+        el navegador.
+        """
+        return f"{self.api_v1_prefix}/admin"
+
     @model_validator(mode="after")
     def _reject_unsafe_production_settings(self) -> Self:
         """Impide combinaciones peligrosas de configuracion."""
@@ -177,6 +290,12 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "BLOG_STORAGE_PROVIDER=minio no es valido con BLOG_APP_ENV=production: "
                     "MinIO es el almacenamiento del entorno local"
+                )
+            if not self.auth_cookie_secure:
+                raise ValueError(
+                    "BLOG_AUTH_COOKIE_SECURE no puede ser false con "
+                    "BLOG_APP_ENV=production: la cookie de sesion viajaria por Internet "
+                    "sin exigir HTTPS"
                 )
         return self
 
