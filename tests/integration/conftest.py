@@ -407,3 +407,48 @@ def cliente_de_la_api(
         aplicacion, raise_server_exceptions=False, sesion=sesion_de_pruebas
     ) as cliente:
         yield cliente
+
+
+# ---------------------------------------------------------------------------
+# Autenticacion administrativa sobre PostgreSQL real (anadido en `Task/011`)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def cliente_administrativo(
+    database_settings: Settings, sesion_de_pruebas: Session
+) -> Iterator[TestClient]:
+    """Cliente que **conserva la cookie de sesion** entre peticiones.
+
+    Se diferencia de `cliente_de_la_api` en una sola cosa, y no es cosmetica:
+    construye la aplicacion con `auth_cookie_secure=False`.
+
+    El motivo es del navegador, no del backend. `TestClient` habla **HTTP**
+    contra `http://testserver`, y un cliente que respete la norma —httpx la
+    respeta— **no guarda ni reenvia una cookie `Secure` recibida por HTTP**. Con
+    la configuracion por defecto, cada peticion posterior llegaria sin cookie y
+    todas las pruebas de sesion medirian 'no hay cookie' en lugar de lo que dicen
+    medir.
+
+    No se esta debilitando nada para que pasen las pruebas: es **exactamente** la
+    configuracion del entorno local, que sirve por HTTP, y la unica que el
+    proyecto admite fuera de produccion. Que `Secure` sea obligatorio **en
+    produccion** lo comprueban `tests/unit/test_configuracion_de_autenticacion.py`
+    —el proceso no arranca sin el— y las pruebas de contrato de la cookie.
+
+    La cadena hasta la guarda *fail-closed* se mantiene: depende de
+    `database_settings` y de `sesion_de_pruebas`, y ambas derivan del resolutor
+    verificado.
+    """
+    from app.main import create_app
+    from app.shared.database import get_session
+
+    aplicacion = create_app(
+        settings=database_settings.model_copy(update={"auth_cookie_secure": False})
+    )
+    aplicacion.dependency_overrides[get_session] = lambda: sesion_de_pruebas
+
+    with _ClienteQueSiempreConsulta(
+        aplicacion, raise_server_exceptions=False, sesion=sesion_de_pruebas
+    ) as cliente:
+        yield cliente

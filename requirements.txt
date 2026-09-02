@@ -21,3 +21,4 @@ psycopg[binary]==3.3.4
 alembic==1.18.5
 boto3==1.43.82
 pillow==12.3.0
+argon2-cffi==25.1.0

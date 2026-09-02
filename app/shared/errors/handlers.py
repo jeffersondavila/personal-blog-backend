@@ -68,6 +68,35 @@ def new_request_id() -> str:
     return str(uuid.uuid4())
 
 
+def request_id_de(request: Request) -> str:
+    """Identificador de correlacion **de la peticion**, creado una sola vez.
+
+    Antes de `Task/011` cada manejador de error generaba el suyo. Bastaba,
+    porque solo se ejecuta uno por peticion y nadie mas lo necesitaba. Ahora si:
+    los eventos de auditoria de autenticacion deben llevar **el mismo**
+    identificador que el cliente ve en el cuerpo de error, que es el objetivo
+    declarado en api-contracts.md seccion 9 —rastrear un problema de extremo a
+    extremo con un unico dato—. Con un identificador por manejador, el evento y
+    la respuesta llevarian numeros distintos y no se podrian cruzar.
+
+    Se memoriza en `request.state`, asi que la primera llamada lo crea y todas
+    las demas de esa peticion devuelven el mismo.
+
+    **No es un segundo sistema de correlacion**: reutiliza el generador que ya
+    existia y lo convierte en el unico punto donde se decide. `Task/017` seguira
+    siendo el propietario de la propagacion completa —aceptar el identificador
+    que envie el cliente en una cabecera acordada, emitirlo en la respuesta y
+    llevarlo a todos los logs de la peticion—: cambiara **el origen** del valor
+    sin tocar a quien lo consume.
+    """
+    existente: str | None = getattr(request.state, "request_id", None)
+    if existente is not None:
+        return existente
+    generado = new_request_id()
+    request.state.request_id = generado
+    return generado
+
+
 def build_error_response(
     *,
     status_code: int,
@@ -75,6 +104,7 @@ def build_error_response(
     message: str,
     request_id: str,
     details: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
 ) -> JSONResponse:
     """Construye la respuesta de error con la forma comun del proyecto."""
     return JSONResponse(
@@ -87,12 +117,13 @@ def build_error_response(
                 "request_id": request_id,
             }
         },
+        headers=headers or None,
     )
 
 
 async def handle_application_error(request: Request, exc: ApplicationError) -> JSONResponse:
     """Traduce un error controlado de la aplicacion."""
-    request_id = new_request_id()
+    request_id = request_id_de(request)
     _logger.warning(
         "Error de aplicacion",
         extra={
@@ -108,6 +139,7 @@ async def handle_application_error(request: Request, exc: ApplicationError) -> J
         message=exc.message,
         request_id=request_id,
         details=exc.details,
+        headers=exc.headers,
     )
 
 
@@ -115,7 +147,7 @@ async def handle_request_validation_error(
     request: Request, exc: RequestValidationError
 ) -> JSONResponse:
     """Traduce un fallo de validacion de entrada a `422` con los campos afectados."""
-    request_id = new_request_id()
+    request_id = request_id_de(request)
     fields = [
         {
             "field": ".".join(str(part) for part in error.get("loc", ())),
@@ -143,7 +175,7 @@ async def handle_request_validation_error(
 
 async def handle_http_exception(request: Request, exc: StarletteHTTPException) -> JSONResponse:
     """Traduce las excepciones HTTP del framework (404 de ruta, 405, etc.)."""
-    request_id = new_request_id()
+    request_id = request_id_de(request)
     status_code = exc.status_code
     code = ERROR_CODE_BY_STATUS.get(status_code, "http_error")
     message = _GENERIC_MESSAGE_BY_STATUS.get(status_code) or str(exc.detail)
@@ -170,7 +202,7 @@ async def handle_unexpected_error(request: Request, exc: Exception) -> JSONRespo
     La excepcion completa —incluida su traza— se registra en el log asociada al
     `request_id`. Al cliente solo le llega un mensaje generico.
     """
-    request_id = new_request_id()
+    request_id = request_id_de(request)
     _logger.exception(
         "Error no controlado",
         exc_info=exc,
