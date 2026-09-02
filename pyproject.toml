@@ -36,6 +36,15 @@ dependencies = [
     # Decodificacion, validacion real y miniaturas de imagen (`Task/010`).
     # No se implementa un parser de JPEG/PNG propio.
     "pillow==12.3.0",
+    # Hash de contrasenas con Argon2id (`Task/011`, decision D-011-F). Es la
+    # recomendacion vigente de OWASP y aporta verificacion y deteccion de
+    # rehash; escribir la serializacion de sal y parametros a mano sobre
+    # `hashlib.scrypt` seria criptografia propia sin necesidad.
+    #
+    # `Task/010` rechazo el SDK de MinIO precisamente porque arrastraba este
+    # paquete "para codigo que alli nunca se ejecuta". Aqui es el codigo que
+    # SI se ejecuta en cada inicio de sesion: la regla es la misma.
+    "argon2-cffi==25.1.0",
 ]
 
 [project.optional-dependencies]

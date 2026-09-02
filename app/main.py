@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from app import __version__
 from app.api import health_router
 from app.api.public import routers_publicos
+from app.modules.authentication.presentation import router as authentication_router
 from app.shared.configuration import Settings, get_settings
 from app.shared.errors.handlers import register_error_handlers
 from app.shared.logging import configure_logging, get_logger
@@ -29,7 +30,12 @@ libros, videos, proyectos, etiquetas y busqueda. Toda coleccion esta paginada y
 **solo** se expone contenido publicado: los borradores y los archivados no
 aparecen en ninguna respuesta.
 
-La API administrativa (`/api/v1/admin/*`) llega en `Task/011` y `Task/012`.
+**Autenticacion administrativa** (`Task/011`): iniciar sesion, cerrar sesion e
+consultar la sesion actual bajo `/api/v1/admin/auth`. `login` es el **unico**
+endpoint administrativo publico; el resto exige una sesion valida verificada en
+el servidor.
+
+El resto de la API administrativa (`/api/v1/admin/*`) llega en `Task/012`.
 """
 
 
@@ -73,6 +79,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # versionado. El prefijo es configuracion, no una constante incrustada.
     for router_publico in routers_publicos:
         application.include_router(router_publico, prefix=resolved.api_v1_prefix)
+
+    # Autenticacion administrativa (`Task/011`). Se monta bajo el mismo prefijo
+    # versionado y trae el suyo propio (`/admin/auth`). **No hay middleware de
+    # autenticacion global**: proteger `/api/v1` entero convertiria en privados
+    # los diez endpoints publicos de `Task/009`. La proteccion se aplica endpoint
+    # a endpoint mediante una dependencia, y `login` es el unico administrativo
+    # que no la lleva.
+    application.include_router(authentication_router, prefix=resolved.api_v1_prefix)
 
     _logger.info(
         "Aplicacion inicializada",
