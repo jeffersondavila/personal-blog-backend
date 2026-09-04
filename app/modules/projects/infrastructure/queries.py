@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Sequence
 
 from sqlalchemy import ColumnElement, func, select
@@ -62,6 +63,44 @@ def obtener_proyecto_publicado(sesion: Session, *, slug: str) -> Project | None:
     consulta = (
         select(Project)
         .where(Project.status == ProjectStatus.PUBLISHED, Project.slug == slug)
+        .options(selectinload(Project.tags), joinedload(Project.cover))
+    )
+    return sesion.execute(consulta).scalars().unique().one_or_none()
+
+
+# ---------------------------------------------------------------------------
+# Consultas administrativas (`Task/012`)
+# ---------------------------------------------------------------------------
+
+
+def contar_proyectos_administrativos(sesion: Session, *, estado: ProjectStatus | None) -> int:
+    """Total de proyectos que cumplen el filtro administrativo."""
+    consulta = select(func.count()).select_from(Project)
+    if estado is not None:
+        consulta = consulta.where(Project.status == estado)
+    return sesion.execute(consulta).scalar_one()
+
+
+def listar_proyectos_administrativos(
+    sesion: Session, *, parametros: ParametrosDePagina, estado: ProjectStatus | None
+) -> Sequence[Project]:
+    """Pagina de proyectos en **cualquier** estado, para el panel (D-012-L)."""
+    consulta = select(Project).options(selectinload(Project.tags), joinedload(Project.cover))
+    if estado is not None:
+        consulta = consulta.where(Project.status == estado)
+    consulta = (
+        consulta.order_by(Project.updated_at.desc(), Project.slug.asc())
+        .limit(parametros.limit)
+        .offset(parametros.offset)
+    )
+    return sesion.execute(consulta).scalars().unique().all()
+
+
+def obtener_proyecto_administrativo(sesion: Session, identificador: uuid.UUID) -> Project | None:
+    """Proyecto por identificador interno, en cualquier estado (decision D-012-I)."""
+    consulta = (
+        select(Project)
+        .where(Project.id == identificador)
         .options(selectinload(Project.tags), joinedload(Project.cover))
     )
     return sesion.execute(consulta).scalars().unique().one_or_none()

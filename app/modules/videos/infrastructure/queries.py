@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Sequence
 
 from sqlalchemy import ColumnElement, func, select
@@ -56,3 +57,41 @@ def listar_videos_publicados(
         .offset(parametros.offset)
     )
     return sesion.execute(consulta).scalars().unique().all()
+
+
+# ---------------------------------------------------------------------------
+# Consultas administrativas (`Task/012`)
+# ---------------------------------------------------------------------------
+
+
+def contar_videos_administrativos(sesion: Session, *, estado: VideoStatus | None) -> int:
+    """Total de videos que cumplen el filtro administrativo."""
+    consulta = select(func.count()).select_from(Video)
+    if estado is not None:
+        consulta = consulta.where(Video.status == estado)
+    return sesion.execute(consulta).scalar_one()
+
+
+def listar_videos_administrativos(
+    sesion: Session, *, parametros: ParametrosDePagina, estado: VideoStatus | None
+) -> Sequence[Video]:
+    """Pagina de videos en **cualquier** estado, para el panel (D-012-L)."""
+    consulta = select(Video).options(selectinload(Video.tags), joinedload(Video.thumbnail))
+    if estado is not None:
+        consulta = consulta.where(Video.status == estado)
+    consulta = (
+        consulta.order_by(Video.updated_at.desc(), Video.slug.asc())
+        .limit(parametros.limit)
+        .offset(parametros.offset)
+    )
+    return sesion.execute(consulta).scalars().unique().all()
+
+
+def obtener_video_administrativo(sesion: Session, identificador: uuid.UUID) -> Video | None:
+    """Video por identificador interno, en cualquier estado (decision D-012-I)."""
+    consulta = (
+        select(Video)
+        .where(Video.id == identificador)
+        .options(selectinload(Video.tags), joinedload(Video.thumbnail))
+    )
+    return sesion.execute(consulta).scalars().unique().one_or_none()

@@ -192,21 +192,32 @@ def medio(
     texto_alternativo: str | None = None,
     ancho: int | None = None,
     alto: int | None = None,
+    cargado_el: datetime | None = None,
+    nombre_original: str = "imagen.png",
 ) -> MediaAsset:
     """Medio listo para persistir.
 
     `object_key` es unico por restriccion del esquema, asi que cada prueba debe
     pasar el suyo.
+
+    `cargado_el` existe porque `created_at` lo pone `now()` de PostgreSQL, que
+    es la hora de **inicio de la transaccion** (decision D-H): todo lo que una
+    prueba cree comparte marca temporal. Una prueba sobre el **orden** por fecha
+    no puede distinguir nada asi, y su resultado lo acabaria decidiendo el
+    desempate. Fijarla explicitamente es lo que la vuelve determinista.
     """
-    return MediaAsset(
+    fila = MediaAsset(
         object_key=clave,
-        original_filename="imagen.png",
+        original_filename=nombre_original,
         mime_type="image/png",
         size_bytes=1024,
         alt_text=texto_alternativo,
         width=ancho,
         height=alto,
     )
+    if cargado_el is not None:
+        fila.created_at = cargado_el
+    return fila
 
 
 def perfil(

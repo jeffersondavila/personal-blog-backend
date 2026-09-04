@@ -15,6 +15,7 @@ from fastapi import FastAPI
 
 from app import __version__
 from app.api import health_router
+from app.api.admin import routers_administrativos
 from app.api.public import routers_publicos
 from app.modules.authentication.presentation import router as authentication_router
 from app.shared.configuration import Settings, get_settings
@@ -35,7 +36,10 @@ consultar la sesion actual bajo `/api/v1/admin/auth`. `login` es el **unico**
 endpoint administrativo publico; el resto exige una sesion valida verificada en
 el servidor.
 
-El resto de la API administrativa (`/api/v1/admin/*`) llega en `Task/012`.
+**API administrativa** (`Task/012`): perfil, articulos, reviews de libros,
+videos, proyectos, etiquetas y medios bajo `/api/v1/admin`. Todos sus
+endpoints exigen una sesion valida; `login` sigue siendo el unico
+administrativo publico.
 """
 
 
@@ -87,6 +91,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # a endpoint mediante una dependencia, y `login` es el unico administrativo
     # que no la lleva.
     application.include_router(authentication_router, prefix=resolved.api_v1_prefix)
+
+    # API administrativa (`Task/012`). Cada router trae ya la proteccion
+    # `AdministradorRequerido`, la validacion de `Origin` y `no-store`: la
+    # postura comun la aplica `app/api/admin.py` al construirlos, de modo que
+    # ningun router administrativo pueda montarse sin ella por descuido.
+    for router_administrativo in routers_administrativos():
+        application.include_router(router_administrativo, prefix=resolved.api_v1_prefix)
 
     _logger.info(
         "Aplicacion inicializada",

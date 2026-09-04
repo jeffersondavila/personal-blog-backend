@@ -33,7 +33,10 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Protocol
+from typing import Protocol
+
+from app.modules.audit.domain.puertos import ContextoDeAuditoria, RegistroDeAuditoria
+from app.shared.reloj import Reloj
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,19 +78,6 @@ class EstadoDeAcceso:
 
 
 @dataclass(frozen=True, slots=True)
-class ContextoDeAuditoria(Protocol):
-    """Datos de correlacion que acompanan a cada evento.
-
-    Es un protocolo y no una clase concreta para que la capa de aplicacion
-    no tenga que importar nada de presentacion: lo que se le pasa es un
-    objeto con estos dos atributos, y de donde salen no es asunto suyo.
-    """
-
-    origen: str
-    request_id: str
-
-
-@dataclass(frozen=True, slots=True)
 class ResultadoDelLimite:
     """Veredicto del limitador para un intento concreto."""
 
@@ -95,19 +85,6 @@ class ResultadoDelLimite:
     #: Segundos que faltan para que la ventana actual termine. Es lo que se
     #: devuelve como `Retry-After`, asi que se expresa en segundos enteros.
     reintentar_en_segundos: int
-
-
-class Reloj(Protocol):
-    """Fuente del instante actual.
-
-    Existe para que la expiracion, el bloqueo y la ventana del limite se puedan
-    probar con instantes fijos en lugar de con esperas reales. Es una
-    abstraccion minima —un metodo— y no un framework de tiempo.
-    """
-
-    def ahora(self) -> datetime:
-        """Instante actual, **siempre con zona horaria UTC**."""
-        ...
 
 
 class UnidadDeTrabajo(Protocol):
@@ -199,26 +176,24 @@ class LimitadorDeAccesos(Protocol):
         ...
 
 
-class RegistroDeAuditoria(Protocol):
-    """Escritura del historial administrativo.
-
-    Solo **crea**: la auditoria no se modifica ni se borra, y las guardas que lo
-    garantizan viven en el modelo desde `Task/008`.
-    """
-
-    def registrar(
-        self,
-        accion: str,
-        *,
-        actor_id: uuid.UUID | None,
-        entidad_id: uuid.UUID | None,
-        request_id: str | None,
-        ip: str | None,
-        metadatos: dict[str, Any] | None = None,
-    ) -> None:
-        """Anade un evento al historial.
-
-        `actor_id` admite nulo porque hay eventos sin actor conocido: un intento
-        de acceso contra un correo que no existe tambien se audita.
-        """
-        ...
+#: Reexportados desde el modulo que es su dueno.
+#:
+#: `Task/011` declaro aqui `RegistroDeAuditoria` y `ContextoDeAuditoria` porque
+#: la autenticacion era su unico consumidor. `Task/012` los consume desde los
+#: cuatro tipos de contenido, el perfil, las etiquetas y los medios, asi que
+#: viven en `app/modules/audit/domain/puertos.py`, que es el modulo dueno del
+#: historial (software-architecture.md seccion 3.3). Se reexportan para que las
+#: firmas y los imports de `Task/011` no cambien: es un refactor, no un cambio
+#: de contrato.
+__all__ = [
+    "AdministradorAutenticado",
+    "ContextoDeAuditoria",
+    "EstadoDeAcceso",
+    "LimitadorDeAccesos",
+    "RegistroDeAuditoria",
+    "Reloj",
+    "RepositorioDeAdministradores",
+    "RepositorioDeSesiones",
+    "ResultadoDelLimite",
+    "UnidadDeTrabajo",
+]

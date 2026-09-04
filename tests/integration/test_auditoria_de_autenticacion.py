@@ -316,12 +316,24 @@ def test_los_eventos_de_autenticacion_siguen_siendo_inmutables(
 
 # --- Catalogo cerrado ------------------------------------------------------
 def test_el_catalogo_de_acciones_de_autenticacion_tiene_cuatro_entradas() -> None:
-    """Cuatro acciones, y las cuatro tienen un consumidor real.
+    """Cuatro acciones de **autenticacion**, y las cuatro con un consumidor real.
 
-    `Task/012` anadira las suyas; inventarlas aqui seria escribir historial que
-    nadie produce.
+    **La expectativa se estrecho en `Task/012` por un cambio de requisito**, que
+    es el primero de los supuestos que BACKEND_TESTING_STRATEGY.md seccion 9
+    admite para modificar un test: `Task/008` dejo escrito que el catalogo se
+    cierra *"en `Task/011` y `Task/012`"*, y esta prueba anotaba que la otra
+    mitad llegaria. Ya ha llegado — once acciones de CRUD administrativo—, asi
+    que la prueba deja de mirar la enumeracion entera y mira **lo suyo**: que
+    las cuatro de autenticacion siguen siendo exactamente esas.
+
+    El catalogo completo se comprueba en `tests/unit/test_catalogo_de_auditoria.py`.
+    Aqui no se duplica.
     """
-    assert {accion.value for accion in AccionAuditada} == {
+    de_autenticacion = {
+        accion.value for accion in AccionAuditada if accion.value.startswith("authentication.")
+    }
+
+    assert de_autenticacion == {
         "authentication.login_succeeded",
         "authentication.login_failed",
         "authentication.logout",

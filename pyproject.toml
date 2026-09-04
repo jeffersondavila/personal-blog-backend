@@ -45,6 +45,18 @@ dependencies = [
     # paquete "para codigo que alli nunca se ejecuta". Aqui es el codigo que
     # SI se ejecuta en cada inicio de sesion: la regla es la misma.
     "argon2-cffi==25.1.0",
+    # Analisis de `multipart/form-data` (`Task/012`, decision D-012-W). Es la
+    # unica dependencia nueva de la tarea y la exige FastAPI para leer un
+    # archivo subido: sin ella, `UploadFile` no se puede declarar.
+    #
+    # La alternativa evaluada era recibir el cuerpo crudo y llevar el nombre del
+    # archivo en un parametro de consulta. Se descarto: `original_filename` es
+    # `NOT NULL` y acabaria en la URL —y por tanto en los logs de acceso—, y el
+    # `alt_text` tendria que viajar por el mismo sitio.
+    #
+    # **Impacto en Lambda: minimo.** Es Python puro, sin extension compilada, y
+    # ocupa ~164 KB (P-07). No arrastra dependencias transitivas.
+    "python-multipart==0.0.32",
 ]
 
 [project.optional-dependencies]

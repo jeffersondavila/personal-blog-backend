@@ -26,7 +26,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import timedelta
 
-from app.modules.audit.domain.acciones import AccionAuditada
+from app.modules.audit.domain.acciones import ENTIDAD_ADMINISTRADOR, AccionAuditada
 from app.modules.authentication.domain.bloqueo import (
     cuenta_bloqueada,
     estado_tras_un_fallo,
@@ -230,6 +230,7 @@ class IniciarSesion:
         """
         self._auditoria.registrar(
             accion.value,
+            entidad=ENTIDAD_ADMINISTRADOR,
             actor_id=administrador_id,
             entidad_id=administrador_id,
             request_id=contexto.request_id,
