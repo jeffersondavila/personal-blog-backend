@@ -158,20 +158,42 @@ def documento(cliente_publico: TestClient) -> dict[str, Any]:
 def test_la_especificacion_declara_los_tres_endpoints_de_autenticacion(
     documento: dict[str, Any],
 ) -> None:
-    administrativas = {ruta for ruta in documento["paths"] if "/admin" in ruta}
+    """Los tres de `/admin/auth`, ni uno mas.
 
-    assert administrativas == {ACCESO, CIERRE, SESION_ACTUAL}
+    **La expectativa se estrecho en `Task/012` por un cambio de requisito**: la
+    prueba comparaba contra **todas** las rutas administrativas porque entonces
+    no habia otras, y anotaba que el CRUD llegaria. Ya esta, asi que compara
+    contra el subarbol del que sigue siendo dueno `Task/011`.
+
+    Lo que protege no cambia: que no se cuele aqui un `register`, un
+    `forgot-password` o un `change-password`, que ninguna fuente canonica pide.
+    """
+    de_autenticacion = {
+        ruta for ruta in documento["paths"] if ruta.startswith("/api/v1/admin/auth")
+    }
+
+    assert de_autenticacion == {ACCESO, CIERRE, SESION_ACTUAL}
 
 
-def test_no_se_declara_ningun_crud_administrativo(documento: dict[str, Any]) -> None:
-    """El CRUD administrativo es de `Task/012` y todavia no existe.
+def test_el_crud_administrativo_de_task_012_no_relaja_la_autenticacion(
+    documento: dict[str, Any],
+) -> None:
+    """Los siete recursos de `Task/012` existen **y exigen sesion**.
 
-    Documentar una superficie que no esta implementada es peor que no
-    documentarla: un cliente generado a partir de la especificacion fallaria al
-    llamarla.
+    Antes esta prueba exigia que **no** existieran. La superficie llego con
+    `Task/012`, y lo que hay que comprobar deja de ser su ausencia y pasa a ser
+    la condicion que `Task/011` fijo para ella: que ninguno sea alcanzable sin
+    sesion. El recorrido transversal completo vive en
+    `test_contrato_administrativo.py`; aqui se comprueba lo que le importa a la
+    autenticacion.
     """
     for recurso in ("posts", "book-reviews", "videos", "projects", "tags", "media", "profile"):
-        assert f"/api/v1/admin/{recurso}" not in documento["paths"]
+        ruta = f"/api/v1/admin/{recurso}"
+        assert ruta in documento["paths"], f"{ruta} deberia existir desde `Task/012`"
+        for metodo, operacion in documento["paths"][ruta].items():
+            assert operacion.get("security") == [{"sesionAdministrativa": []}], (
+                f"{metodo.upper()} {ruta} no exige la sesion administrativa"
+            )
 
 
 def test_el_acceso_es_el_unico_endpoint_administrativo_publico(

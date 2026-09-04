@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import uuid
 
-from app.modules.audit.domain.acciones import AccionAuditada
+from app.modules.audit.domain.acciones import ENTIDAD_ADMINISTRADOR, AccionAuditada
 from app.modules.authentication.domain.puertos import (
     ContextoDeAuditoria,
     RegistroDeAuditoria,
@@ -61,6 +61,7 @@ class CerrarSesion:
         )
         self._auditoria.registrar(
             AccionAuditada.CIERRE_DE_SESION.value,
+            entidad=ENTIDAD_ADMINISTRADOR,
             actor_id=administrador_id,
             entidad_id=administrador_id,
             request_id=contexto.request_id,

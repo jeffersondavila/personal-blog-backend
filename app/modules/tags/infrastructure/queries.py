@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Sequence
 
 from sqlalchemy import Select, exists, func, or_, select
@@ -79,3 +80,41 @@ def listar_etiquetas_disponibles(
         .offset(parametros.offset)
     )
     return sesion.execute(consulta).scalars().all()
+
+
+# ---------------------------------------------------------------------------
+# Consultas administrativas (`Task/012`)
+# ---------------------------------------------------------------------------
+#
+# Al reves que el listado publico. `GET /api/v1/tags` devuelve **solo** las
+# etiquetas con al menos un contenido publicado (decision D-009-H), y tiene que
+# ser asi: una etiqueta usada solo por borradores ofreceria un filtro vacio y
+# revelaria que existe contenido no publicado con ella.
+#
+# El panel necesita justo lo contrario: ver la etiqueta que acaba de crear para
+# poder asignarla. Ordenado por **nombre**, que es como se busca a ojo en una
+# lista de etiquetas; el desempate por `slug` la hace determinista al paginar,
+# por la misma razon que D-009-F.
+
+
+def contar_etiquetas_administrativas(sesion: Session) -> int:
+    """Total de etiquetas, con uso o sin el."""
+    return sesion.execute(select(func.count()).select_from(Tag)).scalar_one()
+
+
+def listar_etiquetas_administrativas(
+    sesion: Session, *, parametros: ParametrosDePagina
+) -> Sequence[Tag]:
+    """Pagina de **todas** las etiquetas, para el panel."""
+    consulta = (
+        select(Tag)
+        .order_by(Tag.name.asc(), Tag.slug.asc())
+        .limit(parametros.limit)
+        .offset(parametros.offset)
+    )
+    return sesion.execute(consulta).scalars().all()
+
+
+def obtener_etiqueta_administrativa(sesion: Session, identificador: uuid.UUID) -> Tag | None:
+    """Etiqueta por identificador interno (decision D-012-I)."""
+    return sesion.execute(select(Tag).where(Tag.id == identificador)).scalar_one_or_none()
