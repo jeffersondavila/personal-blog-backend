@@ -2,10 +2,14 @@
 
 API del blog personal. **FastAPI + PostgreSQL.**
 
-> **Estado: fundación implementada, sin funcionalidad de negocio.**
+> **Estado: backend funcional del MVP.**
 > `Task/005` establece la base técnica —configuración, log, errores, acceso a datos,
-> migraciones, pruebas y `Dockerfile`—. **No hay todavía modelo de datos, endpoints de
-> contenido ni autenticación**: llegan a partir de `Task/008`.
+> migraciones, pruebas y `Dockerfile`—; `Task/008` el modelo de datos; `Task/009` la API
+> pública; `Task/010` el almacenamiento de objetos; `Task/011` la autenticación
+> administrativa; y `Task/012` la **API administrativa**.
+>
+> *Encabezado corregido en `Task/012`: seguía describiendo el estado de `Task/005`, que
+> dejó de ser cierto con `Task/008`.*
 
 ---
 
@@ -138,20 +142,22 @@ app/
 │   └── health.py              endpoints técnicos
 ├── modules/                   módulos de negocio
 │   ├── models.py              registro único de los modelos ORM
-│   ├── posts/                 domain (ciclo de vida) + infrastructure
-│   ├── book_reviews/          domain (ciclo de vida, valoración) + infrastructure
-│   ├── videos/                domain (ciclo de vida) + infrastructure
-│   ├── projects/              domain (ciclo de vida, estado del trabajo) + infrastructure
-│   ├── profile/               infrastructure
-│   ├── tags/                  infrastructure
+│   ├── posts/                 domain + application + infrastructure + presentation
+│   ├── book_reviews/          domain (con valoración) + application + infra + presentation
+│   ├── videos/                igual, sin Markdown y sin despublicación
+│   ├── projects/              igual, con el estado del trabajo aparte del de publicación
+│   ├── profile/               application + infrastructure + presentation (singleton)
+│   ├── tags/                  application + infrastructure + presentation
 │   ├── media/                 domain + application + infrastructure + presentation
-│   ├── authentication/        infrastructure (solo el modelo; login → Task/011)
-│   └── audit/                 infrastructure (persistencia e inmutabilidad)
+│   ├── authentication/        domain + application + infrastructure + presentation
+│   └── audit/                 domain (puertos y catálogo) + infrastructure
 └── shared/
     ├── configuration/         configuración tipada y validada
     ├── logging/               log estructurado en JSON
     ├── errors/                jerarquía de errores y su traducción a HTTP
     ├── pagination/            parámetros y envoltura de colección paginada
+    ├── slug/                  formato y generación del slug (`app/shared/slug.py`)
+    ├── reloj/                 fuente del instante actual (`app/shared/reloj.py`)
     ├── storage/               ObjectStorage, MinIOStorage y S3Storage
     └── database/              base declarativa, mixins, tipos, motor y sesiones
 alembic/                       migraciones

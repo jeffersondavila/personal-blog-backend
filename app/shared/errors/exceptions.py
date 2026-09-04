@@ -64,6 +64,50 @@ class ValidationFailedError(ApplicationError):
     status_code = HTTPStatus.UNPROCESSABLE_ENTITY
 
 
+class ReferenciaDesconocidaError(ValidationFailedError):
+    """La peticion referencia una entidad que no existe.
+
+    Distinto de `ResourceNotFoundError` (`Task/012`, decision D-012-J): lo que
+    no existe **no es el recurso de la ruta**, sino algo que el cuerpo nombra
+    —una etiqueta, una portada—. Devolver `404` seria ambiguo: el cliente no
+    sabria cual de los dos recursos falta. La peticion esta bien formada y lo
+    que falla es su contenido, que es lo que api-contracts.md seccion 8 reserva
+    para `422`.
+
+    Los identificadores desconocidos viajan en `details` para que el
+    administrador sepa **cual** quitar, no solo que hay uno malo.
+    """
+
+    code = "unknown_reference"
+
+    def __init__(self, mensaje: str, *, campo: str, valores: list[str]) -> None:
+        super().__init__(mensaje, details={"campo": campo, "valores": valores})
+        self.campo = campo
+        self.valores = valores
+
+
+class MedioSinTextoAlternativoError(ValidationFailedError):
+    """La imagen referenciada no tiene texto alternativo (requisito A-04).
+
+    `data-model.md` seccion 4.1 asigna a `Task/012` y `Task/014` **exigirlo donde
+    se usa** la imagen; `Task/010` decidio deliberadamente no exigirlo al cargar
+    (D-010-N), porque *"se escribe al usar la imagen, no al cargarla"*.
+
+    Es `422` y no `409` porque lo que falla es el **contenido de la peticion**:
+    referencia una imagen que todavia no puede usarse en algo visible. Los cuatro
+    tipos publicables no llegan aqui —alli la exigencia es del **estado**, al
+    publicar, y usa `cannot_publish_incomplete_draft`—; el perfil si, porque no
+    tiene estado: *"siempre existe y siempre esta visible"*.
+    """
+
+    code = "media_without_alt_text"
+
+    def __init__(self, mensaje: str, *, campo: str, valor: str) -> None:
+        super().__init__(mensaje, details={"campo": campo, "valor": valor})
+        self.campo = campo
+        self.valor = valor
+
+
 class ConflictError(ApplicationError):
     """La operacion choca con el estado actual del recurso."""
 

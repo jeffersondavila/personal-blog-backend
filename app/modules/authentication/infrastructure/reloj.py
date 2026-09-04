@@ -1,23 +1,14 @@
 """Reloj del sistema (`Task/011`).
 
-Implementa el puerto `Reloj`. Vive en `infrastructure` porque leer la hora del
-sistema es, exactamente, hablar con algo externo al dominio: es lo que permite
-que los casos de uso se prueben con instantes fijos en lugar de con esperas
-reales.
-
-Siempre **UTC con zona horaria**. `datetime.now()` sin zona produce un instante
-que no significa lo mismo en Windows —donde se desarrolla—, en el contenedor
-Linux del entorno local y en Lambda, y comparar uno de esos con un instante de
-PostgreSQL es un `TypeError` en el mejor caso y un desfase silencioso en el peor.
+**Reexportacion.** La implementacion vive en `app/shared/reloj.py` desde
+`Task/012`: un reloj no conoce ninguna regla de negocio, y sus consumidores
+pasaron de uno —la autenticacion— a cinco, con los cuatro tipos de contenido que
+fijan `published_at`. Mantener aqui el nombre evita tocar las firmas y los
+imports de `Task/011`: es un refactor, no un cambio de contrato.
 """
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from app.shared.reloj import RelojDelSistema
 
-
-class RelojDelSistema:
-    """Instante actual del proceso, en UTC."""
-
-    def ahora(self) -> datetime:
-        return datetime.now(UTC)
+__all__ = ["RelojDelSistema"]

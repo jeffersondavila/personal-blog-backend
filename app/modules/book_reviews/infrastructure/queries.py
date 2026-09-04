@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Sequence
 
 from sqlalchemy import ColumnElement, func, select
@@ -65,6 +66,50 @@ def obtener_review_publicada(sesion: Session, *, slug: str) -> BookReview | None
     consulta = (
         select(BookReview)
         .where(BookReview.status == BookReviewStatus.PUBLISHED, BookReview.slug == slug)
+        .options(selectinload(BookReview.tags), joinedload(BookReview.cover))
+    )
+    return sesion.execute(consulta).scalars().unique().one_or_none()
+
+
+# ---------------------------------------------------------------------------
+# Consultas administrativas (`Task/012`)
+# ---------------------------------------------------------------------------
+#
+# Sin filtro de estado obligatorio —el panel ve borradores y archivados— y con
+# el orden administrativo: `updated_at` descendente, desempate por `slug`
+# (decision D-012-L).
+
+
+def contar_reviews_administrativas(sesion: Session, *, estado: BookReviewStatus | None) -> int:
+    """Total de reviews que cumplen el filtro administrativo."""
+    consulta = select(func.count()).select_from(BookReview)
+    if estado is not None:
+        consulta = consulta.where(BookReview.status == estado)
+    return sesion.execute(consulta).scalar_one()
+
+
+def listar_reviews_administrativas(
+    sesion: Session, *, parametros: ParametrosDePagina, estado: BookReviewStatus | None
+) -> Sequence[BookReview]:
+    """Pagina de reviews en **cualquier** estado, para el panel."""
+    consulta = select(BookReview).options(
+        selectinload(BookReview.tags), joinedload(BookReview.cover)
+    )
+    if estado is not None:
+        consulta = consulta.where(BookReview.status == estado)
+    consulta = (
+        consulta.order_by(BookReview.updated_at.desc(), BookReview.slug.asc())
+        .limit(parametros.limit)
+        .offset(parametros.offset)
+    )
+    return sesion.execute(consulta).scalars().unique().all()
+
+
+def obtener_review_administrativa(sesion: Session, identificador: uuid.UUID) -> BookReview | None:
+    """Review por identificador interno, en cualquier estado (decision D-012-I)."""
+    consulta = (
+        select(BookReview)
+        .where(BookReview.id == identificador)
         .options(selectinload(BookReview.tags), joinedload(BookReview.cover))
     )
     return sesion.execute(consulta).scalars().unique().one_or_none()

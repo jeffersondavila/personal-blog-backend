@@ -45,28 +45,27 @@ def test_openapi_no_declara_endpoints_no_implementados(client: TestClient) -> No
     es el primero de los supuestos que BACKEND_TESTING_STRATEGY.md seccion 9
     admite para modificar un test.
 
+    **La expectativa volvio a cambiar en `Task/012`**, y por el mismo supuesto:
+    el CRUD administrativo que esta prueba declaraba pendiente ya existe.
+
     Lo que no cambia es lo que la prueba protege: que no aparezca documentado
-    nada que no se haya implementado. Se sigue comprobando, sobre lo que
+    nada que no se haya implementado. Se sigue comprobando sobre lo que
     corresponde a las tareas siguientes:
 
     - `/ready` es de `Task/017`.
-    - El **CRUD** administrativo, de `Task/012`. La autenticacion —los tres
-      endpoints de `/admin/auth`— si existe desde `Task/011`, asi que la
-      expectativa se estrecha a lo que sigue sin implementarse en lugar de
-      desaparecer.
+    - La API **no** expone la auditoria: ninguna fuente lo pide en el MVP, y la
+      invariante 8 de CONTENT_MODEL.md prohibe modificar un evento.
 
-    La comprobacion **exacta** del conjunto de rutas de la API publica vive en
-    `tests/contract/test_openapi_publica.py`, junto al resto del contrato HTTP.
-    Aqui no se duplica.
+    La comprobacion **exacta** del conjunto de rutas vive en
+    `tests/contract/test_openapi_publica.py` y en
+    `tests/contract/test_contrato_administrativo.py`, junto al resto del
+    contrato HTTP. Aqui no se duplica.
     """
     document: dict[str, Any] = client.get("/openapi.json").json()
     rutas = set(document["paths"])
 
     assert "/health" in rutas
     assert "/ready" not in rutas, "`/ready` es de `Task/017` y no debe existir todavia"
-    administrativas = {ruta for ruta in rutas if "admin" in ruta}
-    assert administrativas == {
-        "/api/v1/admin/auth/login",
-        "/api/v1/admin/auth/logout",
-        "/api/v1/admin/auth/me",
-    }, "el CRUD administrativo es de `Task/012` y no debe existir todavia"
+    assert not [ruta for ruta in rutas if "audit" in ruta], (
+        "la auditoria no se expone por API: un `AuditEvent` solo se crea y se lee"
+    )

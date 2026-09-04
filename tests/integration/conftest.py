@@ -50,6 +50,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 
@@ -446,6 +447,61 @@ def cliente_administrativo(
     aplicacion = create_app(
         settings=database_settings.model_copy(update={"auth_cookie_secure": False})
     )
+    aplicacion.dependency_overrides[get_session] = lambda: sesion_de_pruebas
+
+    with _ClienteQueSiempreConsulta(
+        aplicacion, raise_server_exceptions=False, sesion=sesion_de_pruebas
+    ) as cliente:
+        yield cliente
+
+
+# ---------------------------------------------------------------------------
+# API administrativa con almacenamiento real (anadido en `Task/012`)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def cliente_administrativo_con_medios(
+    database_settings: Settings,
+    sesion_de_pruebas: Session,
+    destino_de_almacenamiento_verificado: Any,
+) -> Iterator[TestClient]:
+    """Cliente administrativo cuyo almacenamiento es el MinIO **de pruebas**.
+
+    `cliente_administrativo` basta para todo lo que no toca objetos: su
+    configuracion de almacenamiento es ficticia, y no hace falta mas para
+    comprobar contenido, etiquetas o perfil. Los endpoints de medios si escriben
+    en el almacenamiento, asi que necesitan el destino verificado por el harness
+    de `Task/010` — el mismo bucket efimero, con su prefijo inequivoco y su
+    borrado en el `finally`.
+
+    **Nada nuevo se relaja aqui.** La cadena hasta las dos guardas *fail-closed*
+    se mantiene intacta: la base viene de `database_settings` y de
+    `sesion_de_pruebas`, y el almacenamiento, de
+    `destino_de_almacenamiento_verificado`. Las tres derivan de un resolutor que
+    verifica **antes** de entregar nada.
+
+    `auth_cookie_secure=False` por la misma razon que en `cliente_administrativo`:
+    `TestClient` habla HTTP y un cliente que respete la norma no reenvia una
+    cookie `Secure` recibida por HTTP.
+    """
+    from app.main import create_app
+    from app.shared.database import get_session
+
+    destino = destino_de_almacenamiento_verificado
+    configuracion = database_settings.model_copy(
+        update={
+            "auth_cookie_secure": False,
+            "storage_provider": "minio",
+            "storage_bucket": destino.bucket,
+            "storage_region": destino.region,
+            "storage_endpoint_url": destino.endpoint_url,
+            "storage_access_endpoint_url": destino.access_endpoint_url,
+            "storage_access_key": destino.access_key,
+            "storage_secret_key": SecretStr(destino.secret_key),
+        }
+    )
+    aplicacion = create_app(settings=configuracion)
     aplicacion.dependency_overrides[get_session] = lambda: sesion_de_pruebas
 
     with _ClienteQueSiempreConsulta(

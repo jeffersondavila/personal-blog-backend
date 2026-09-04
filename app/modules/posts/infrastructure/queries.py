@@ -27,6 +27,7 @@ pagina y la resolucion del orden, en `app/shared/pagination`.
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Sequence
 
 from sqlalchemy import ColumnElement, func, select
@@ -120,6 +121,62 @@ def obtener_articulo_publicado(sesion: Session, *, slug: str) -> Post | None:
         select(Post)
         .where(Post.status == PostStatus.PUBLISHED)
         .where(Post.slug == slug)
+        .options(selectinload(Post.tags), joinedload(Post.cover))
+    )
+    return sesion.execute(consulta).scalars().unique().one_or_none()
+
+
+# ---------------------------------------------------------------------------
+# Consultas administrativas (`Task/012`)
+# ---------------------------------------------------------------------------
+#
+# Son de solo lectura, asi que no pasan por la capa `application`: es el mismo
+# criterio D-009-Q que `Task/009` aplico a las consultas publicas. Lo que si
+# cambia son las dos reglas que definen "administrativo":
+#
+# 1. **No hay filtro de estado obligatorio.** El panel ve borradores y
+#    archivados; es justo lo contrario de la invariante 19.
+# 2. **El orden es `updated_at` descendente** (decision D-012-L). El orden
+#    publico no sirve: un borrador **no tiene** `published_at`, asi que todos
+#    quedarian agrupados en un extremo. MVP_SCOPE.md 3.3 describe el panel por
+#    "ultimos elementos modificados". El desempate por `slug` es la misma razon
+#    que D-009-F: un `LIMIT`/`OFFSET` sobre un orden no total puede repetir u
+#    omitir filas entre paginas.
+
+
+def contar_articulos_administrativos(sesion: Session, *, estado: PostStatus | None) -> int:
+    """Total de articulos que cumplen el filtro administrativo."""
+    consulta = select(func.count()).select_from(Post)
+    if estado is not None:
+        consulta = consulta.where(Post.status == estado)
+    return sesion.execute(consulta).scalar_one()
+
+
+def listar_articulos_administrativos(
+    sesion: Session, *, parametros: ParametrosDePagina, estado: PostStatus | None
+) -> Sequence[Post]:
+    """Pagina de articulos en **cualquier** estado, para el panel."""
+    consulta = select(Post).options(selectinload(Post.tags), joinedload(Post.cover))
+    if estado is not None:
+        consulta = consulta.where(Post.status == estado)
+    consulta = (
+        consulta.order_by(Post.updated_at.desc(), Post.slug.asc())
+        .limit(parametros.limit)
+        .offset(parametros.offset)
+    )
+    return sesion.execute(consulta).scalars().unique().all()
+
+
+def obtener_articulo_administrativo(sesion: Session, identificador: uuid.UUID) -> Post | None:
+    """Articulo por **identificador interno**, en cualquier estado.
+
+    Por identificador y no por slug (decision D-012-I): api-contracts.md
+    seccion 4 lo exige porque *"el slug puede cambiar mientras se edita un
+    borrador"*.
+    """
+    consulta = (
+        select(Post)
+        .where(Post.id == identificador)
         .options(selectinload(Post.tags), joinedload(Post.cover))
     )
     return sesion.execute(consulta).scalars().unique().one_or_none()

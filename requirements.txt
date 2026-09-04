@@ -22,3 +22,7 @@ alembic==1.18.5
 boto3==1.43.82
 pillow==12.3.0
 argon2-cffi==25.1.0
+
+# Analisis de multipart/form-data para la carga de imagenes (`Task/012`).
+# Python puro, ~164 KB, sin dependencias transitivas.
+python-multipart==0.0.32

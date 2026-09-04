@@ -40,13 +40,18 @@ RUTAS_ESPERADAS = {
     "/api/v1/search",
 }
 
-#: Los **tres** endpoints de autenticacion que anade `Task/011`, y ninguno mas.
-#: El CRUD administrativo es de `Task/012` y todavia no debe existir.
+#: Los **tres** endpoints de autenticacion que anade `Task/011`.
 RUTAS_DE_AUTENTICACION = {
     "/api/v1/admin/auth/login",
     "/api/v1/admin/auth/logout",
     "/api/v1/admin/auth/me",
 }
+
+#: Prefijo de todo lo administrativo. Desde `Task/012` hay 23 rutas mas bajo el,
+#: y su contrato **exacto** vive en `test_contrato_administrativo.py`: este
+#: modulo comprueba la API **publica**, y duplicar aqui la lista administrativa
+#: la condenaria a divergir.
+PREFIJO_ADMINISTRATIVO = "/api/v1/admin"
 
 
 @pytest.fixture
@@ -60,35 +65,42 @@ def documento(cliente_publico: TestClient) -> dict[str, Any]:
 def test_la_especificacion_declara_exactamente_las_rutas_del_contrato(
     documento: dict[str, Any],
 ) -> None:
-    """Las diez rutas publicas, la sonda, y los tres endpoints de acceso.
+    """Las diez rutas publicas y la sonda de vivacidad, **exactamente**.
 
-    **La expectativa cambio en `Task/011` por un cambio de requisito**, que es
-    el primero de los supuestos que BACKEND_TESTING_STRATEGY.md seccion 9
-    admite para modificar un test: hasta entonces no existia ningun endpoint
-    administrativo, y esta misma prueba anotaba que llegarian en `Task/011` y
-    `Task/012`.
+    **La expectativa cambio en `Task/011` y otra vez en `Task/012`**, las dos
+    por un cambio de requisito —el primero de los supuestos que
+    BACKEND_TESTING_STRATEGY.md seccion 9 admite—: hasta `Task/011` no existia
+    ningun endpoint administrativo, y hasta `Task/012` no existia el CRUD.
 
-    Lo que la prueba protege **no** cambia: el conjunto sigue siendo cerrado y
-    escrito a mano. Una ruta nueva —publica o administrativa— sigue teniendo
-    que anotarse aqui para pasar.
+    Lo que la prueba protege **no** cambia, y el conjunto sigue siendo cerrado y
+    escrito a mano: una ruta publica nueva sigue teniendo que anotarse aqui para
+    pasar. Lo que cambia es su **alcance**: este modulo comprueba la API
+    publica, asi que mira lo que **no** cuelga del prefijo administrativo. El
+    conjunto exacto de rutas administrativas se comprueba, igual de cerrado, en
+    `test_contrato_administrativo.py`.
     """
-    assert set(documento["paths"]) == RUTAS_ESPERADAS | RUTAS_DE_AUTENTICACION
+    publicas = {ruta for ruta in documento["paths"] if not ruta.startswith(PREFIJO_ADMINISTRATIVO)}
+
+    assert publicas == RUTAS_ESPERADAS
 
 
 # --- L-02: ningun endpoint administrativo ----------------------------------
-def test_lo_unico_administrativo_declarado_es_la_autenticacion(
+def test_la_autenticacion_sigue_siendo_las_tres_rutas_de_task_011(
     documento: dict[str, Any],
 ) -> None:
-    """`Task/011` entrega la autenticacion; el CRUD sigue siendo de `Task/012`.
+    """Regresion de `Task/011`: sus tres endpoints, intactos.
 
-    Antes esta prueba exigia **cero** rutas administrativas y anotaba que
-    llegarian en `Task/011` y `Task/012`. Ahora ha llegado la primera mitad, y
-    la prueba sigue haciendo el mismo trabajo: impedir que se documente una
-    superficie administrativa que nadie ha implementado.
+    Antes esta prueba exigia que **lo unico** administrativo fuera la
+    autenticacion, y anotaba que el CRUD llegaria en `Task/012`. Ha llegado, asi
+    que la prueba se estrecha a lo que sigue protegiendo: que bajo
+    `/admin/auth` no aparezca ni desaparezca nada — en particular, que no se
+    cuele un `register` o un `reset-password` que ninguna fuente pide.
     """
-    administrativas = {ruta for ruta in documento["paths"] if "admin" in ruta}
+    de_autenticacion = {
+        ruta for ruta in documento["paths"] if ruta.startswith(f"{PREFIJO_ADMINISTRATIVO}/auth")
+    }
 
-    assert administrativas == RUTAS_DE_AUTENTICACION
+    assert de_autenticacion == RUTAS_DE_AUTENTICACION
 
 
 # --- L-03: no existe detalle de video --------------------------------------
@@ -101,21 +113,34 @@ def test_no_se_declara_el_detalle_de_video(documento: dict[str, Any]) -> None:
 def test_la_api_publica_es_de_solo_lectura(documento: dict[str, Any]) -> None:
     """Ningun endpoint **publico** escribe: los flujos publicos no modifican datos.
 
-    Las rutas administrativas quedan fuera del recorrido porque iniciar y
-    cerrar sesion son `POST` por definicion. La comprobacion se estrecha al
-    conjunto del que la afirmacion sigue siendo cierta, en lugar de relajarse.
+    Las rutas administrativas quedan fuera del recorrido porque escribir es
+    justamente lo que hacen. La comprobacion se estrecha al conjunto del que la
+    afirmacion sigue siendo cierta, en lugar de relajarse: desde `Task/012` el
+    filtro es el **prefijo**, no una lista de tres rutas.
     """
     for ruta, operaciones in documento["paths"].items():
-        if ruta in RUTAS_DE_AUTENTICACION:
+        if ruta.startswith(PREFIJO_ADMINISTRATIVO):
             continue
         metodos = {metodo.lower() for metodo in operaciones}
         assert metodos == {"get"}, f"{ruta} declara metodos distintos de GET: {sorted(metodos)}"
 
 
 # --- L-06: `status` no es un parametro publico -----------------------------
-def test_ningun_endpoint_declara_el_parametro_status(documento: dict[str, Any]) -> None:
-    """api-contracts.md seccion 6: `status` es **solo administrativo**."""
+def test_ningun_endpoint_publico_declara_el_parametro_status(
+    documento: dict[str, Any],
+) -> None:
+    """api-contracts.md seccion 6: `status` es **solo administrativo**.
+
+    Antes de `Task/012` la comprobacion podia recorrer la especificacion entera,
+    porque no existia ningun endpoint administrativo con filtros. Ahora los
+    cuatro listados del panel **si** declaran `status` —es su unico filtro,
+    decision D-012-M—, asi que la prueba se estrecha al lado del que la
+    afirmacion sigue siendo cierta: el publico. Que los administrativos sean
+    **exactamente** esos cuatro se comprueba en `test_contrato_administrativo.py`.
+    """
     for ruta, operaciones in documento["paths"].items():
+        if ruta.startswith(PREFIJO_ADMINISTRATIVO):
+            continue
         for metodo, operacion in operaciones.items():
             nombres = {parametro["name"] for parametro in operacion.get("parameters", [])}
             assert "status" not in nombres, f"{metodo.upper()} {ruta} declara `status`"
