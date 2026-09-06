@@ -33,6 +33,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.modules.media.domain.claves import clave_de_la_miniatura
 from app.modules.media.infrastructure.models import MediaAsset
 from tests.integration import datos
 
@@ -46,8 +47,18 @@ RECURSOS_CON_MEDIO = [
 ]
 
 
+#: Campos que transportan un enlace **firmado**, no un dato del contrato.
+#:
+#: `thumbnail_access_url` se anadio en `Task/016` (requisito P-04). Entra en esta
+#: lista por la misma razon que `access_url`: la clave viaja firmada dentro del
+#: enlace, que es precisamente lo que la invariante permite. Si no se retirara,
+#: la comprobacion de abajo dejaria de mirar *«lo que el contrato transporta como
+#: dato»* y empezaria a mirar tambien las firmas.
+CAMPOS_DE_ENLACE_FIRMADO = frozenset({"access_url", "thumbnail_access_url"})
+
+
 def _sin_los_enlaces_firmados(cuerpo: Any) -> str:
-    """Serializa la respuesta retirando el valor de cada `access_url`.
+    """Serializa la respuesta retirando el valor de cada enlace firmado.
 
     Lo que queda es todo lo que el contrato transporta **como dato**. Si la
     clave del objeto aparece ahi, se esta filtrando de verdad.
@@ -57,7 +68,7 @@ def _sin_los_enlaces_firmados(cuerpo: Any) -> str:
     def _recorrer(nodo: Any) -> None:
         if isinstance(nodo, dict):
             for clave, valor in nodo.items():
-                if clave == "access_url" and isinstance(valor, str):
+                if clave in CAMPOS_DE_ENLACE_FIRMADO and isinstance(valor, str):
                     enlaces.append(valor)
                 else:
                     _recorrer(valor)
@@ -179,6 +190,45 @@ def test_la_prueba_anterior_mira_un_cuerpo_que_de_verdad_lleva_el_medio(
     assert len(_sin_los_enlaces_firmados(cuerpo)) > 0
 
 
+# --- M-02 (`Task/016`): la miniatura tampoco filtra su clave ----------------
+def test_la_miniatura_trae_enlace_firmado_de_su_clave_derivada(
+    cliente_de_la_api: TestClient, sesion_de_pruebas: Session
+) -> None:
+    """Requisito P-04, contra MinIO real.
+
+    La clave de la miniatura **se deriva** de la del original (D-010-I), asi que
+    esta prueba comprueba dos cosas a la vez: que el enlace apunta a la clave
+    derivada —y no otra vez al original— y que va firmado.
+    """
+    medio = _crear_contenido_con_portada(sesion_de_pruebas)
+
+    cuerpo = cliente_de_la_api.get("/api/v1/posts/con-medio").json()
+    miniatura = cuerpo["cover"]["thumbnail_access_url"]
+
+    assert miniatura is not None
+    assert clave_de_la_miniatura(medio.object_key) in miniatura
+    assert "X-Amz-Signature" in miniatura
+    assert miniatura != cuerpo["cover"]["access_url"]
+
+
+def test_la_clave_de_la_miniatura_no_aparece_como_dato(
+    cliente_de_la_api: TestClient, sesion_de_pruebas: Session
+) -> None:
+    """La invariante 9 alcanza igual al campo nuevo.
+
+    El campo anadido por `Task/016` no puede debilitar la garantia: fuera de su
+    propio enlace firmado, la clave derivada no aparece en ninguna parte del
+    cuerpo.
+    """
+    medio = _crear_contenido_con_portada(sesion_de_pruebas)
+
+    respuesta = cliente_de_la_api.get("/api/v1/posts/con-medio")
+
+    texto = _sin_los_enlaces_firmados(respuesta.json())
+    assert clave_de_la_miniatura(medio.object_key) not in texto
+    assert "thumbnail.webp" not in texto
+
+
 # --- A-03 ------------------------------------------------------------------
 def test_la_url_emitida_no_se_persiste(
     cliente_de_la_api: TestClient, sesion_de_pruebas: Session
@@ -221,7 +271,16 @@ def test_los_detalles_que_anidan_un_medio_llevan_el_mismo_campo(
 
     medio_publico = cliente_de_la_api.get(ruta).json()[campo]
 
-    assert set(medio_publico) == {"alt_text", "width", "height", "access_url"}
+    # `thumbnail_access_url` lo anadio `Task/016` (requisito P-04), cerrando la
+    # deuda 2 de `Task/010`. Es un campo nuevo OPCIONAL: cambio compatible segun
+    # api-contracts.md seccion 10, regla 3.
+    assert set(medio_publico) == {
+        "alt_text",
+        "width",
+        "height",
+        "access_url",
+        "thumbnail_access_url",
+    }
     assert medio_publico["access_url"].startswith("http")
 
 

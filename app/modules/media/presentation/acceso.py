@@ -9,7 +9,8 @@ Que decide `Task/010` y que sigue siendo de `Task/030` (**D-08**)
 
 | Aqui, en `Task/010` | En `Task/030` |
 | --- | --- |
-| El acceso existe y es un enlace **temporal** | Si ademas hay una URL **estable** |
+| El acceso existe y es un enlace **temporal**, para el original y —desde
+`Task/016`— para la miniatura | Si ademas hay una URL **estable** |
 | Se genera al servir y **no** se persiste | La semantica de cache y el CDN |
 | El TTL es **configuracion** (D-010-M) | El **valor** productivo del TTL |
 | `object_key` no es un campo del contrato | Bucket, CORS y *lifecycle* |
@@ -31,6 +32,7 @@ from typing import Annotated
 
 from fastapi import Depends
 
+from app.modules.media.domain.claves import clave_de_la_miniatura
 from app.modules.media.infrastructure.models import MediaAsset
 from app.shared.configuration import Settings, get_settings
 from app.shared.storage import ObjectStorage
@@ -45,15 +47,28 @@ class AccesoAMedios:
         self._duracion = duracion
 
     def url_de(self, medio: MediaAsset) -> str:
-        """Enlace temporal de lectura del **original** del medio.
-
-        La miniatura no se expone todavia: `Task/009` dejo pendiente **un**
-        campo de acceso y anadir mas de uno seria ampliar el contrato publico
-        por encima de lo que ninguna fuente vigente pide. Su clave se deriva de
-        `object_key`, asi que exponerla cuando `Task/016` optimice los listados
-        seguira siendo un cambio compatible.
-        """
+        """Enlace temporal de lectura del **original** del medio."""
         return self._almacenamiento.acceso_temporal(medio.object_key, duracion=self._duracion).url
+
+    def url_de_la_miniatura(self, medio: MediaAsset) -> str:
+        """Enlace temporal de lectura de la **miniatura** del medio.
+
+        Anadido por `Task/016` (requisito P-04), que cierra la deuda 2 de
+        `Task/010`: la miniatura se generaba y se almacenaba desde entonces, pero
+        no se exponia. Se expone ahora porque ahora hay un consumidor real —los
+        listados publicos, que descargaban el original para pintarlo pequeno—.
+
+        La clave **se deriva** de la del original (decision D-010-I): la
+        miniatura no es una fila, asi que esto no consulta la base de datos ni
+        exige ninguna columna nueva.
+
+        **Es un enlace temporal, igual que el del original.** No es una URL
+        estable de medios: eso es la pregunta abierta de **D-08**, propiedad de
+        `Task/030`, y esta tarea no la responde. Prefirmar es aritmetica local,
+        asi que emitir dos enlaces por medio no anade ningun viaje de red.
+        """
+        clave = clave_de_la_miniatura(medio.object_key)
+        return self._almacenamiento.acceso_temporal(clave, duracion=self._duracion).url
 
 
 def obtener_acceso_a_medios(

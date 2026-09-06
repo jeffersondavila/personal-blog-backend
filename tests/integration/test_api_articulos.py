@@ -316,7 +316,16 @@ def test_el_elemento_de_listado_lleva_lo_que_la_pantalla_necesita(
     portada_publica = elemento["cover"]
     assert portada_publica["alt_text"] == "Una portada"
     assert (portada_publica["width"], portada_publica["height"]) == (800, 600)
-    assert set(portada_publica) == {"alt_text", "width", "height", "access_url"}
+    # `thumbnail_access_url` lo anadio `Task/016` (requisito P-04), cerrando la
+    # deuda 2 de `Task/010`. Es un campo nuevo OPCIONAL: cambio compatible segun
+    # api-contracts.md seccion 10, regla 3.
+    assert set(portada_publica) == {
+        "alt_text",
+        "width",
+        "height",
+        "access_url",
+        "thumbnail_access_url",
+    }
     assert portada_publica["access_url"].startswith("http")
 
 

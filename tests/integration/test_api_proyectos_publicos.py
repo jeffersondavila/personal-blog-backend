@@ -74,7 +74,13 @@ def test_listado_publica_solo_projects_visibles_con_sus_campos(
     # firma y marca de tiempo, asi que no puede compararse literal: se comprueba
     # su presencia y se mantiene cerrado el conjunto de campos.
     medio_publico = item["cover"]
-    sin_el_enlace = {c: v for c, v in medio_publico.items() if c != "access_url"}
+    sin_el_enlace = {
+        c: v
+        for c, v in medio_publico.items()
+        # Dos enlaces firmados desde `Task/016`: el del original y el de la
+        # miniatura (requisito P-04). Ninguno es un dato estable del contrato.
+        if c not in {"access_url", "thumbnail_access_url"}
+    }
     assert sin_el_enlace == {"alt_text": "Portada", "width": 1200, "height": 630}
     assert medio_publico["access_url"].startswith("http")
     assert "object_key" not in item["cover"]
