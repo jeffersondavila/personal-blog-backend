@@ -42,12 +42,20 @@ RUTAS_DE_AUTENTICACION = {
     "/api/v1/admin/auth/me",
 }
 
-#: Las **23** rutas administrativas de `Task/012`, escritas una a una.
+#: Ruta de solo lectura del historial, anadida por `Task/012.1`.
+#:
+#: `MVP_SCOPE.md` seccion 3.3 exige que el dashboard muestre los *"ultimos
+#: eventos de auditoria"*, y ninguna de las 38 operaciones que dejo `Task/012`
+#: los lee. Es la **unica** exposicion del historial, y es de solo lectura.
+AUDITORIA = "/api/v1/admin/audit-events"
+
+#: Las **24** rutas administrativas: las 23 de `Task/012` mas la de `Task/012.1`.
 #:
 #: Se escriben a mano y no se derivan de la aplicacion: derivarlas haria que la
 #: prueba se adaptara sola a cualquier ruta nueva, que es justo lo que no debe
 #: hacer. Aqui el contrato es la lista, y la aplicacion tiene que coincidir.
 RUTAS_ADMINISTRATIVAS = {
+    AUDITORIA,
     "/api/v1/admin/profile",
     "/api/v1/admin/posts",
     "/api/v1/admin/posts/{post_id}",
@@ -156,7 +164,11 @@ def test_la_api_publica_sigue_siendo_de_solo_lectura(documento: dict[str, Any]) 
 def test_la_especificacion_declara_exactamente_las_rutas_del_contrato(
     documento: dict[str, Any],
 ) -> None:
-    """Las 11 publicas, las 3 de acceso y las 23 administrativas."""
+    """Las 11 publicas, las 3 de acceso y las **24** administrativas.
+
+    La 24.ª es la de solo lectura del historial, anadida por `Task/012.1`: el
+    inventario pasa de **26 a 27 patrones de ruta**.
+    """
     assert set(documento["paths"]) == (
         RUTAS_PUBLICAS | RUTAS_DE_AUTENTICACION | RUTAS_ADMINISTRATIVAS
     )
@@ -210,15 +222,36 @@ def test_el_perfil_no_se_crea_ni_se_elimina(documento: dict[str, Any]) -> None:
     assert metodos == {"get", "put"}
 
 
-def test_no_se_expone_ninguna_ruta_de_auditoria(documento: dict[str, Any]) -> None:
-    """Invariante 8 de CONTENT_MODEL.md: un `AuditEvent` no se edita ni se borra.
+def test_la_auditoria_solo_se_expone_para_leerla(documento: dict[str, Any]) -> None:
+    """La auditoria sigue siendo **solo-creacion**: se lee, nunca se modifica.
 
-    Ninguna fuente pide exponer el historial por API en el MVP, y desde luego
-    ninguna pide poder modificarlo. Que no exista la ruta es la garantia mas
-    barata de que no se puede llamar.
+    Sustituye a `test_no_se_expone_ninguna_ruta_de_auditoria`, de `Task/012`, que
+    exigia que **no existiera ninguna** ruta con `audit`. Aquel test se apoyaba
+    en la premisa *"ninguna fuente pide exponer el historial por API en el MVP"*,
+    y **MVP_SCOPE.md seccion 3.3 la contradice**: fija como alcance minimo del
+    dashboard *"conteo de contenido por tipo y estado, ultimos elementos
+    modificados y **ultimos eventos de auditoria**"*.
+
+    Se cambia por el motivo **2** de BACKEND_TESTING_STRATEGY.md seccion 9 —el
+    test contradice explicitamente la documentacion vigente—, **no** para que la
+    implementacion se ponga verde.
+
+    La condicion resultante es **mas restrictiva**, no menos: antes solo se
+    exigia una ausencia; ahora se exige que exista **exactamente una** ruta de
+    auditoria, que sea la del contrato y que declare **exclusivamente `get`**.
+    La invariante de inmutabilidad (16 y 16b de `data-model.md`) queda intacta:
+    sin `post`, `put`, `patch` ni `delete` no hay forma de escribir el historial
+    por HTTP.
     """
-    for ruta in documento["paths"]:
-        assert "audit" not in ruta, f"{ruta} expone la auditoria"
+    rutas_de_auditoria = {ruta for ruta in documento["paths"] if "audit" in ruta}
+
+    assert rutas_de_auditoria == {AUDITORIA}, (
+        f"la auditoria debe exponerse en exactamente una ruta: {sorted(rutas_de_auditoria)}"
+    )
+
+    metodos = {metodo.lower() for metodo in documento["paths"][AUDITORIA]}
+
+    assert metodos == {"get"}, f"{AUDITORIA} declara metodos de escritura: {sorted(metodos)}"
 
 
 # --- Ningun esquema administrativo filtra campos internos ------------------
@@ -356,6 +389,7 @@ def test_la_paginacion_administrativa_es_la_del_proyecto(documento: dict[str, An
         "/api/v1/admin/projects",
         "/api/v1/admin/tags",
         "/api/v1/admin/media",
+        AUDITORIA,
     ):
         referencia = documento["paths"][ruta]["get"]["responses"]["200"]["content"][
             "application/json"
@@ -363,3 +397,55 @@ def test_la_paginacion_administrativa_es_la_del_proyecto(documento: dict[str, An
         esquema = documento["components"]["schemas"][referencia.rsplit("/", 1)[-1]]
 
         assert set(esquema["properties"]) == {"items", "page", "page_size", "total", "pages"}
+
+
+# --- `Task/012.1`: la superficie exacta del historial ----------------------
+def test_el_historial_solo_admite_paginacion(documento: dict[str, Any]) -> None:
+    """Sin filtros: `MVP_SCOPE.md` seccion 3.3 solo pide *"los ultimos"*.
+
+    Un filtro anadido hoy seria superficie `v1` permanente (`api-contracts.md`
+    seccion 10, regla 2). Anadirlo mas adelante, con un consumidor real, si es
+    compatible (regla 3).
+    """
+    nombres = {
+        parametro["name"] for parametro in documento["paths"][AUDITORIA]["get"]["parameters"]
+    }
+
+    assert nombres == {"page", "page_size"}
+
+
+def test_el_evento_de_auditoria_expone_exactamente_cinco_campos(
+    documento: dict[str, Any],
+) -> None:
+    """El DTO `v1` del historial, campo a campo.
+
+    Cada campo del contrato `v1` es permanente. La lista se escribe entera y no
+    se deriva del modelo ORM: derivarla haria que una columna nueva se publicara
+    sola.
+    """
+    esquema = documento["components"]["schemas"]["EventoDeAuditoria"]
+
+    assert set(esquema["properties"]) == {
+        "id",
+        "occurred_at",
+        "action",
+        "entity_type",
+        "entity_id",
+    }
+
+
+@pytest.mark.parametrize(
+    "campo",
+    ["actor_id", "event_metadata", "metadata", "request_id", "ip_address"],
+)
+def test_el_evento_de_auditoria_no_expone_lo_que_no_esta_en_el_contrato(
+    documento: dict[str, Any], campo: str
+) -> None:
+    """`ip_address` es dato personal (**O-09**); el resto, superficie sin consumidor.
+
+    Se comprueba sobre el documento **entero** del esquema, no solo sobre las
+    claves: un campo declarado dentro de otra estructura tambien contaria.
+    """
+    esquema = json.dumps(documento["components"]["schemas"]["EventoDeAuditoria"])
+
+    assert campo not in esquema, f"el DTO del historial menciona `{campo}`"

@@ -93,7 +93,11 @@ def router_administrativo(*, prefix: str, tags: list[str | Enum]) -> APIRouter:
 
 
 def routers_administrativos() -> tuple[APIRouter, ...]:
-    """Los routers administrativos de `Task/012`, en el orden en que se montan.
+    """Los routers administrativos, en el orden en que se montan.
+
+    Siete son de `Task/012`; el del historial lo anade `Task/012.1`, que es de
+    **solo lectura** y hereda la misma postura por el hecho de crearse con
+    `router_administrativo()`.
 
     **Montaje incremental**, igual que hizo `app/api/public.py` en `Task/009`:
     cada router se incorpora aqui solo despues de que su *slice* haya registrado
@@ -103,6 +107,7 @@ def routers_administrativos() -> tuple[APIRouter, ...]:
     `router_administrativo` de este mismo modulo, asi que importarlos en la
     cabecera crearia un ciclo.
     """
+    from app.modules.audit.presentation.router_admin import router as auditoria
     from app.modules.book_reviews.presentation.router_admin import router as reviews
     from app.modules.media.presentation.router_admin import router as medios
     from app.modules.posts.presentation.router_admin import router as articulos
@@ -111,4 +116,4 @@ def routers_administrativos() -> tuple[APIRouter, ...]:
     from app.modules.tags.presentation.router_admin import router as etiquetas
     from app.modules.videos.presentation.router_admin import router as videos
 
-    return (perfil, articulos, reviews, videos, proyectos, etiquetas, medios)
+    return (perfil, articulos, reviews, videos, proyectos, etiquetas, medios, auditoria)
