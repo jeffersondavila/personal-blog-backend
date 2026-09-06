@@ -106,6 +106,7 @@ valores ficticios, está en [`.env.example`](.env.example).
 | `BLOG_APP_ENV` | No | `local` | `local`, `test` o `production`. |
 | `BLOG_APP_DEBUG` | No | `false` | Modo depuración. Prohibido en `production`. |
 | `BLOG_API_V1_PREFIX` | No | `/api/v1` | Prefijo de la API versionada. |
+| `BLOG_PUBLIC_SITE_BASE_URL` | **Sí** | — | Origen público del **sitio**, sin barra final. Lo usa `sitemap.xml` para emitir URL absolutas. Sin él el proceso no arranca. |
 | `BLOG_LOG_LEVEL` | No | `INFO` | Nivel de log. |
 | `BLOG_LOG_FORMAT` | No | `json` | `json` o `text`. |
 | `BLOG_DATABASE_POOL_SIZE` | No | `5` | Tamaño del pool. |
@@ -122,6 +123,13 @@ valores ficticios, está en [`.env.example`](.env.example).
 | `BLOG_STORAGE_SECRET_KEY` | Con `minio` | — | Secreto. **Nunca se imprime**: `SecretStr` y fuera de `repr`. |
 | `BLOG_STORAGE_ACCESS_TTL_SECONDS` | No | `900` | Validez del enlace temporal de una imagen (60..604800). |
 
+> **Por qué el backend necesita el origen del SITIO.** El sitemap enumera URL del sitio
+> público, no del API: listar `https://api.ejemplo.test/articulos/x` sería falso, porque
+> esa dirección no sirve la página. Y no se puede deducir de la petición —`Host` lo
+> escribe el cliente y, tras un proxy o API Gateway, nombra el API—. Con la topología
+> **D-15**, sitio y API viven en dominios distintos. **No fija ningún dominio:** el
+> concreto es la decisión **D-07**, abierta hasta `Task/035`.
+>
 > **Por qué hay dos endpoints.** Dentro de Docker Compose el backend alcanza
 > MinIO como `http://minio:9000`, pero el enlace que devuelve la API lo consume
 > el **navegador del host**, que no resuelve ese nombre. Y no puede corregirse
@@ -189,12 +197,20 @@ invariantes entre dominio, PostgreSQL y tareas futuras— está documentado en
 | Método | Ruta | Propósito |
 | --- | --- | --- |
 | `GET` | `/health` | Vivacidad del proceso. No comprueba dependencias. |
+| `GET` | `/sitemap.xml` | Sitemap del sitio público, desde el contenido publicado (`Task/016`). |
 | `GET` | `/openapi.json` | Especificación OpenAPI generada. |
 | `GET` | `/docs` | Documentación interactiva. |
 
-`/health` queda **fuera** de `/api/v1` a propósito: el prefijo versiona el contrato de datos
-con el frontend, mientras que la sonda de vivacidad la consume la plataforma y no debe
-cambiar de ruta cuando el contrato pase a `v2`.
+`/health` y `/sitemap.xml` quedan **fuera** de `/api/v1` a propósito: el prefijo versiona el
+contrato de datos con el frontend, mientras que la sonda de vivacidad la consume la
+plataforma y el sitemap un *crawler*. Ninguno debe cambiar de ruta cuando el contrato pase
+a `v2`.
+
+`GET /sitemap.xml` responde `application/xml` con las rutas estáticas del sitio más el
+contenido `published` de artículos, reviews y proyectos. **El contenido en borrador o
+archivado nunca aparece** (requisito **E-08**): reutiliza el mismo filtro de estado que
+protege los listados públicos, y está fijado por prueba contra PostgreSQL real. Las URL son
+del **sitio**, no del API, y se componen con `BLOG_PUBLIC_SITE_BASE_URL`.
 
 `GET /ready` —la comprobación real de PostgreSQL y del almacenamiento— corresponde a
 `Task/017`. Los recursos de contenido llegan en `Task/009`.

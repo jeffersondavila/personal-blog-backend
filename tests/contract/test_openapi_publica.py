@@ -28,6 +28,10 @@ from fastapi.testclient import TestClient
 #: coincidir con ella.
 RUTAS_ESPERADAS = {
     "/health",
+    # `Task/016`, requisito E-05. Fuera del prefijo versionado con el mismo
+    # criterio que `/health`: es un artefacto del protocolo web, no contrato de
+    # datos del frontend.
+    "/sitemap.xml",
     "/api/v1/profile",
     "/api/v1/posts",
     "/api/v1/posts/{slug}",
@@ -67,10 +71,11 @@ def test_la_especificacion_declara_exactamente_las_rutas_del_contrato(
 ) -> None:
     """Las diez rutas publicas y la sonda de vivacidad, **exactamente**.
 
-    **La expectativa cambio en `Task/011` y otra vez en `Task/012`**, las dos
-    por un cambio de requisito —el primero de los supuestos que
+    **La expectativa cambio en `Task/011`, en `Task/012` y en `Task/016`**, las
+    tres por un cambio de requisito —el primero de los supuestos que
     BACKEND_TESTING_STRATEGY.md seccion 9 admite—: hasta `Task/011` no existia
-    ningun endpoint administrativo, y hasta `Task/012` no existia el CRUD.
+    ningun endpoint administrativo, hasta `Task/012` no existia el CRUD, y hasta
+    `Task/016` no existia `sitemap.xml` (requisito E-05).
 
     Lo que la prueba protege **no** cambia, y el conjunto sigue siendo cerrado y
     escrito a mano: una ruta publica nueva sigue teniendo que anotarse aqui para
@@ -324,7 +329,10 @@ def test_la_referencia_a_un_medio_declara_su_campo_de_acceso(documento: dict[str
     """
     propiedades = set(documento["components"]["schemas"]["MedioPublico"]["properties"])
 
-    assert propiedades == {"alt_text", "width", "height", "access_url"}
+    # `thumbnail_access_url` lo anadio `Task/016` (requisito P-04), cerrando la
+    # deuda 2 de `Task/010`. Es un campo nuevo OPCIONAL: cambio compatible segun
+    # api-contracts.md seccion 10, regla 3.
+    assert propiedades == {"alt_text", "width", "height", "access_url", "thumbnail_access_url"}
 
 
 def test_el_esquema_del_medio_no_menciona_el_bucket_ni_la_region(

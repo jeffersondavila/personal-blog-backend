@@ -19,9 +19,11 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-#: Las **diez** rutas publicas de `Task/009` mas la sonda de vivacidad.
+#: Las **diez** rutas publicas de `Task/009`, la sonda de vivacidad y el sitemap
+#: que anadio `Task/016` (requisito E-05).
 RUTAS_PUBLICAS = {
     "/health",
+    "/sitemap.xml",
     "/api/v1/profile",
     "/api/v1/posts",
     "/api/v1/posts/{slug}",
