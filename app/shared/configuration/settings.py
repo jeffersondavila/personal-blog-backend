@@ -85,6 +85,21 @@ class Settings(BaseSettings):
         description="Prefijo de la API versionada (api-contracts.md, seccion 1).",
     )
 
+    # --- Sitio publico -----------------------------------------------------
+    # Anadido por `Task/016`. Obligatoria y sin valor por defecto, como
+    # `database_url` y `storage_bucket`: el sitemap enumera URL del SITIO, y un
+    # origen inventado produciria un sitemap que apunta a otro sitio.
+    #
+    # No se deduce de la peticion: `Host` lo escribe el cliente y, detras de un
+    # proxy o de API Gateway, nombra el API y no el sitio (**D-15**: el sitio
+    # vive en el dominio raiz y el API en un subdominio).
+    #
+    # No fija ningun dominio: el dominio concreto es **D-07**, todavia abierta.
+    public_site_base_url: str = Field(
+        description="Origen publico del sitio, sin barra final. Obligatoria: la usa el "
+        "sitemap (requisito E-05) para emitir URL absolutas del sitio.",
+    )
+
     # --- Observabilidad ----------------------------------------------------
     log_level: LogLevel = Field(default="INFO")
     log_format: LogFormat = Field(
@@ -318,6 +333,28 @@ class Settings(BaseSettings):
                 "BLOG_STORAGE_ACCESS_ENDPOINT_URL debe ser una URL HTTP explicita, "
                 "por ejemplo 'http://localhost:9000'"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _normalize_public_site_base_url(self) -> Self:
+        """Valida y normaliza el origen del sitio.
+
+        *Fail-closed* (requisito T-01): un valor ausente o no utilizable rompe
+        el arranque, no la primera peticion al sitemap. Un sitemap que apunta a
+        un sitio equivocado es peor que no publicar sitemap.
+
+        Se normaliza a una sola forma canonica —sin barra final— para que quien
+        construya una URL pueda concatenar la ruta sin comprobar el separador.
+        Se usa `object.__setattr__` porque el modelo es `frozen`.
+        """
+        recortado = self.public_site_base_url.strip()
+        partes = urlsplit(recortado)
+        if partes.scheme not in {"http", "https"} or not partes.hostname:
+            raise ValueError(
+                "BLOG_PUBLIC_SITE_BASE_URL debe ser una URL absoluta http o https, "
+                "por ejemplo 'http://localhost:8081'"
+            )
+        object.__setattr__(self, "public_site_base_url", recortado.rstrip("/"))
         return self
 
     @model_validator(mode="after")

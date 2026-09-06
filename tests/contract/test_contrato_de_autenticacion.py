@@ -246,11 +246,18 @@ def test_las_rutas_publicas_no_declaran_ningun_requisito_de_seguridad(
 
 # --- P-06 ------------------------------------------------------------------
 def test_el_contrato_publico_no_cambia(documento: dict[str, Any]) -> None:
-    """Las diez rutas publicas y la sonda de vivacidad, intactas."""
+    """Las diez rutas publicas de `Task/009` siguen intactas.
+
+    Lo que esta prueba protege es que **la autenticacion no toca la API
+    publica**. El conjunto incluye ademas la sonda de vivacidad y, desde
+    `Task/016`, `sitemap.xml` (requisito E-05): ninguno de los dos cuelga del
+    prefijo versionado, y ninguno exige autenticacion.
+    """
     publicas = {ruta for ruta in documento["paths"] if "/admin" not in ruta}
 
     assert publicas == {
         "/health",
+        "/sitemap.xml",
         "/api/v1/profile",
         "/api/v1/posts",
         "/api/v1/posts/{slug}",

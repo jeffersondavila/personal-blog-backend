@@ -18,6 +18,7 @@ from app.api import health_router
 from app.api.admin import routers_administrativos
 from app.api.public import routers_publicos
 from app.modules.authentication.presentation import router as authentication_router
+from app.modules.sitemap.presentation import router as sitemap_router
 from app.shared.configuration import Settings, get_settings
 from app.shared.errors.handlers import register_error_handlers
 from app.shared.logging import configure_logging, get_logger
@@ -77,6 +78,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     register_error_handlers(application)
     application.include_router(health_router)
+
+    # `GET /sitemap.xml` (`Task/016`, requisito E-05). Fuera del prefijo
+    # versionado con el mismo criterio que `/health`: el prefijo versiona el
+    # contrato de datos del frontend, y el sitemap es un artefacto del protocolo
+    # web que consume un *crawler*. No debe mudarse de ruta al pasar a `v2`.
+    application.include_router(sitemap_router)
 
     # Los routers de contenido viven en la capa de presentacion de su modulo
     # (software-architecture.md seccion 3.2) y se montan aqui bajo el prefijo

@@ -79,6 +79,17 @@ FAKE_STORAGE_ENDPOINT_URL = "http://almacenamiento.invalid:9000"
 FAKE_STORAGE_ACCESS_KEY = "clave_de_prueba"
 FAKE_STORAGE_SECRET_KEY = "secreto_de_prueba"
 
+#: Origen ficticio del sitio publico (`Task/016`).
+#:
+#: Es el tercer campo sin valor por defecto, junto con la URL de base de datos y
+#: el bucket: sin el, ningun `Settings()` de este proceso seria valido. Se repone
+#: aqui por la misma razon y con el mismo alcance.
+#:
+#: Usa el TLD reservado `.invalid` (RFC 2606) y un anfitrion distinto del del
+#: API a proposito: si algun dia el codigo confundiera el origen del sitio con el
+#: del API, las pruebas lo verian en lugar de coincidir por casualidad.
+FAKE_PUBLIC_SITE_BASE_URL = "http://sitio.invalid"
+
 #: Variables que el proceso de pruebas debe tener siempre puestas para que la
 #: configuracion sea construible.
 ENTORNO_MINIMO_DE_PRUEBAS = {
@@ -87,6 +98,7 @@ ENTORNO_MINIMO_DE_PRUEBAS = {
     "BLOG_STORAGE_ENDPOINT_URL": FAKE_STORAGE_ENDPOINT_URL,
     "BLOG_STORAGE_ACCESS_KEY": FAKE_STORAGE_ACCESS_KEY,
     "BLOG_STORAGE_SECRET_KEY": FAKE_STORAGE_SECRET_KEY,
+    "BLOG_PUBLIC_SITE_BASE_URL": FAKE_PUBLIC_SITE_BASE_URL,
 }
 
 
@@ -119,6 +131,7 @@ _aislar_el_proceso_de_pruebas()
 __all__ = [
     "ENTORNO_MINIMO_DE_PRUEBAS",
     "FAKE_DATABASE_URL",
+    "FAKE_PUBLIC_SITE_BASE_URL",
     "FAKE_STORAGE_ACCESS_KEY",
     "FAKE_STORAGE_BUCKET",
     "FAKE_STORAGE_ENDPOINT_URL",
