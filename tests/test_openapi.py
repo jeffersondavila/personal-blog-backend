@@ -48,13 +48,20 @@ def test_openapi_no_declara_endpoints_no_implementados(client: TestClient) -> No
     **La expectativa volvio a cambiar en `Task/012`**, y por el mismo supuesto:
     el CRUD administrativo que esta prueba declaraba pendiente ya existe.
 
+    **Y vuelve a cambiar en `Task/012.1`**, esta vez por el supuesto **2**: la
+    prueba afirmaba que *"ninguna fuente pide"* exponer la auditoria, y
+    MVP_SCOPE.md seccion 3.3 la contradice —fija como alcance minimo del
+    dashboard los *"ultimos eventos de auditoria"*—. La invariante que la
+    motivaba **no se toca**: un `AuditEvent` sigue sin poder modificarse ni
+    eliminarse, y lo que se comprueba ahora es justamente eso, con una condicion
+    mas fuerte que una simple ausencia.
+
     Lo que no cambia es lo que la prueba protege: que no aparezca documentado
     nada que no se haya implementado. Se sigue comprobando sobre lo que
     corresponde a las tareas siguientes:
 
     - `/ready` es de `Task/017`.
-    - La API **no** expone la auditoria: ninguna fuente lo pide en el MVP, y la
-      invariante 8 de CONTENT_MODEL.md prohibe modificar un evento.
+    - La auditoria se expone **solo para leerla**, en una unica ruta.
 
     La comprobacion **exacta** del conjunto de rutas vive en
     `tests/contract/test_openapi_publica.py` y en
@@ -66,6 +73,12 @@ def test_openapi_no_declara_endpoints_no_implementados(client: TestClient) -> No
 
     assert "/health" in rutas
     assert "/ready" not in rutas, "`/ready` es de `Task/017` y no debe existir todavia"
-    assert not [ruta for ruta in rutas if "audit" in ruta], (
-        "la auditoria no se expone por API: un `AuditEvent` solo se crea y se lee"
+
+    de_auditoria = [ruta for ruta in rutas if "audit" in ruta]
+
+    assert de_auditoria == ["/api/v1/admin/audit-events"], (
+        "la auditoria se expone en una unica ruta, la del contrato"
+    )
+    assert set(document["paths"][de_auditoria[0]]) == {"get"}, (
+        "un `AuditEvent` solo se crea y se lee: la ruta no admite escritura"
     )
