@@ -51,6 +51,31 @@ if TYPE_CHECKING:  # pragma: no cover - solo para el tipado estatico
 #: esa operacion no tiene cuerpo donde poner un codigo.
 _CODIGOS_DE_AUSENCIA: Final = frozenset({"NoSuchKey", "404", "NotFound"})
 
+#: Prefijo bajo el que consulta la sonda de disponibilidad. **Nunca contiene
+#: nada**: no se crea ningun objeto centinela, y las claves reales de los medios
+#: son UUID v4 (`Task/010`), asi que no pueden colisionar con el.
+PREFIJO_DE_LA_SONDA: Final[str] = "_readiness/"
+
+#: Timeouts de la sonda, en segundos, y sin reintentos. Verificados durante la
+#: `Task/017` contra MinIO real. Son limites por fase; el presupuesto HTTP
+#: total de 2.5s se aplica en readiness.py, antes de los 3s de Traefik.
+SEGUNDOS_DE_CONEXION_DE_LA_SONDA: Final[float] = 1.5
+SEGUNDOS_DE_LECTURA_DE_LA_SONDA: Final[float] = 1.5
+
+
+def opciones_de_sonda() -> dict[str, object]:
+    """Opciones de `botocore` que acotan la sonda de disponibilidad.
+
+    `total_max_attempts=1` incluye la tentativa inicial. En Config,
+    `max_attempts=1` permitiria UN REINTENTO: dos tentativas y backoff.
+    Regresion con conteo de envios reales del SDK en Task/017.
+    """
+    return {
+        "connect_timeout": SEGUNDOS_DE_CONEXION_DE_LA_SONDA,
+        "read_timeout": SEGUNDOS_DE_LECTURA_DE_LA_SONDA,
+        "retries": {"total_max_attempts": 1, "mode": "standard"},
+    }
+
 
 class AlmacenamientoCompatibleS3(ObjectStorage):
     """Implementacion de `ObjectStorage` sobre un servicio compatible con S3."""
@@ -61,6 +86,18 @@ class AlmacenamientoCompatibleS3(ObjectStorage):
     @abstractmethod
     def _crear_cliente(self) -> S3Client:
         """Construye el cliente del SDK con la politica propia del adaptador."""
+
+    @abstractmethod
+    def _crear_cliente_de_sonda(self) -> S3Client:
+        """Cliente de `comprobar_disponibilidad()`, con timeouts propios y sin reintentos.
+
+        Es un cliente aparte y no el operativo por una razon concreta: los
+        valores por defecto de `botocore` son largos y **reintentan**, asi que
+        una sonda contra un endpoint caido podria tardar decenas de segundos —el
+        `healthCheck` de Traefik usa `timeout: 3s`—. Pero acortar el cliente
+        **operativo** degradaria una subida de imagen legitima, que si necesita
+        margen. Dos consumidores con necesidades opuestas, dos clientes.
+        """
 
     @abstractmethod
     def _crear_cliente_de_firma(self) -> S3Client | None:
@@ -86,6 +123,11 @@ class AlmacenamientoCompatibleS3(ObjectStorage):
         base de datos (`app/shared/database/session.py`).
         """
         return self._crear_cliente()
+
+    @cached_property
+    def _cliente_de_sonda(self) -> S3Client:
+        """Cliente de la sonda de disponibilidad, creado una sola vez."""
+        return self._crear_cliente_de_sonda()
 
     @cached_property
     def _cliente_de_firma(self) -> S3Client:
@@ -180,6 +222,33 @@ class AlmacenamientoCompatibleS3(ObjectStorage):
             if self._es_ausencia(error):
                 return
             raise self._fallo("eliminar", error) from error
+
+    def comprobar_disponibilidad(self) -> None:
+        """Sonda de disponibilidad: `ListObjectsV2` acotado por prefijo.
+
+        Por que `ListObjectsV2` y no `HeadBucket`
+        -----------------------------------------
+
+        Las dos distinguen el bucket ausente, pero solo esta entrega un **codigo
+        de error semantico**. `HeadBucket` responde a un `HEAD`, sin cuerpo, asi
+        que `botocore` no puede leer el XML del error y devuelve `Code='404'` o
+        `Code='403'`: cadenas numericas con las que el log no puede decir *que*
+        fallo. Con `ListObjectsV2` llegan `NoSuchBucket` e `InvalidAccessKeyId`.
+
+        Y hay una segunda razon, de permisos: ambas exigen `s3:ListBucket`, pero
+        solo esta envia un prefijo, asi que `Task/030` puede conceder el permiso
+        **condicionado a `s3:prefix`**. Con `HeadBucket` habria que concederlo
+        sin condicion, es decir, permitir enumerar el bucket entero.
+
+        `MaxKeys=1` y un prefijo que nunca contiene nada: la respuesta es
+        minima y no depende de cuantos objetos haya.
+        """
+        try:
+            self._cliente_de_sonda.list_objects_v2(
+                Bucket=self.bucket, Prefix=PREFIJO_DE_LA_SONDA, MaxKeys=1
+            )
+        except Exception as error:
+            raise self._fallo("comprobar la disponibilidad", error) from error
 
     def acceso_temporal(self, clave: str, *, duracion: timedelta) -> AccesoTemporal:
         """Firma un enlace de lectura temporal.

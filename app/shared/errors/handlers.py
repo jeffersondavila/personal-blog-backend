@@ -38,6 +38,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.shared.errors.exceptions import ApplicationError
 from app.shared.logging import get_logger
+from app.shared.logging.contexto import NOMBRE_DE_LA_CABECERA_DE_CORRELACION
 
 _logger = get_logger(__name__)
 
@@ -106,7 +107,17 @@ def build_error_response(
     details: dict[str, Any] | None = None,
     headers: dict[str, str] | None = None,
 ) -> JSONResponse:
-    """Construye la respuesta de error con la forma comun del proyecto."""
+    """Construye la respuesta de error con la forma comun del proyecto.
+
+    La cabecera de correlacion se anade **aqui** y no solo en el middleware
+    (`Task/017`): un `500` no controlado lo convierte en respuesta
+    `ServerErrorMiddleware`, que Starlette monta **por encima** del middleware de
+    la aplicacion, asi que esa respuesta no pasa por el. Ponerla en el unico
+    constructor de respuestas de error garantiza que **ningun** error salga sin
+    su identificador, venga de la capa que venga.
+    """
+    cabeceras = dict(headers or {})
+    cabeceras[NOMBRE_DE_LA_CABECERA_DE_CORRELACION] = request_id
     return JSONResponse(
         status_code=status_code,
         content={
@@ -117,7 +128,7 @@ def build_error_response(
                 "request_id": request_id,
             }
         },
-        headers=headers or None,
+        headers=cabeceras,
     )
 
 

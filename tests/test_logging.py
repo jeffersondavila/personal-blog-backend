@@ -115,9 +115,17 @@ def test_el_log_de_la_aplicacion_no_contiene_la_contrasena(
     create_app(settings=configuracion)
 
     salida = capsys.readouterr().out
-    linea = next(
+    # `-1` y no `next(...)`: importar `app.main` ejecuta `app = create_app()` a
+    # nivel de modulo, asi que cuando este test es el primero en importarlo hay
+    # **dos** lineas de arranque y la primera es la de esa instancia, con la
+    # configuracion del entorno minimo. Tomar la primera hacia que la prueba
+    # dependiera de si otro test habia importado el modulo antes. Fragilidad
+    # preexistente, corregida al descubrirla en `Task/017`: la prueba se vuelve
+    # determinista, no mas permisiva.
+    lineas = [
         json.loads(texto) for texto in salida.splitlines() if "Aplicacion inicializada" in texto
-    )
+    ]
+    linea = lineas[-1]
 
     assert "clave_secreta" not in salida
     assert linea["context"]["database"] == "postgresql://usuario:***@localhost:5432/base"

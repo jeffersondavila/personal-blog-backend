@@ -2,12 +2,26 @@
 
 `GET /health` responde afirmativamente **si el proceso esta en pie**, sin
 comprobar ninguna dependencia (api-contracts.md, seccion 2; requisito O-03).
-Esa separacion es deliberada: un healthcheck que consulta la base de datos
-reinicia el contenedor cuando el problema esta en la base de datos, no en el
-servicio.
 
-`GET /ready` —la comprobacion real de PostgreSQL y del almacenamiento— es
-requisito O-04 y corresponde a `Task/017`. No se adelanta aqui.
+Esa separacion es deliberada, y la razon es **semantica**: `/health` responde a
+*"el proceso esta vivo"*, y la respuesta a esa pregunta no cambia porque
+PostgreSQL se caiga. Mezclarlas dejaria el sistema sin forma de distinguir un
+proceso muerto de una dependencia caida, que es justo la distincion que O-03 y
+O-04 existen para crear.
+
+> **Precision de `Task/017`.** Hasta esta tarea, este comentario justificaba lo
+> mismo diciendo que un healthcheck que consulta la base de datos *"reinicia el
+> contenedor"*. La conclusion era correcta, pero esa razon **no se sostiene**:
+> Docker Compose no reinicia un contenedor por el resultado de su `HEALTHCHECK`
+> —la politica `restart` reacciona a que el proceso termine—, y el reinicio
+> automatico por sonda es comportamiento de Docker Swarm, que este proyecto no
+> usa. La consecuencia real de mantener `/health` aqui es otra, y tambien
+> importa: durante un incidente de dependencias el contenedor sigue **sano y en
+> marcha**, asi que sus logs siguen siendo consultables desde Portainer.
+
+`GET /ready` —la comprobacion real de PostgreSQL y del almacenamiento, requisito
+O-04— vive en `app/api/readiness.py` desde `Task/017`. Es la sonda que consume
+Traefik, porque su consecuencia si es de rotacion.
 
 **Fuera del prefijo `/api/v1` a proposito.** El prefijo versiona el contrato de
 datos con el frontend; la sonda de vivacidad la consume la plataforma —Docker,

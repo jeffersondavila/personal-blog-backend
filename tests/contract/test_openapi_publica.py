@@ -20,7 +20,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 #: Las **diez** rutas publicas del contrato vigente (api-contracts.md seccion 3),
-#: mas la sonda de vivacidad, que vive fuera del prefijo versionado a proposito.
+#: mas las **dos sondas de plataforma**, que viven fuera del prefijo versionado a
+#: proposito, mas el sitemap.
 #:
 #: Se escriben una a una en lugar de derivarlas de la aplicacion: derivarlas
 #: haria que la prueba se adaptara sola a cualquier ruta nueva, que es justo lo
@@ -28,6 +29,10 @@ from fastapi.testclient import TestClient
 #: coincidir con ella.
 RUTAS_ESPERADAS = {
     "/health",
+    # `Task/017`, requisito O-04. Sonda de disponibilidad real. Fuera del
+    # prefijo versionado por el mismo criterio que `/health`: la consume la
+    # plataforma —Traefik la usa como `healthCheck`—, no el frontend.
+    "/ready",
     # `Task/016`, requisito E-05. Fuera del prefijo versionado con el mismo
     # criterio que `/health`: es un artefacto del protocolo web, no contrato de
     # datos del frontend.
@@ -69,13 +74,14 @@ def documento(cliente_publico: TestClient) -> dict[str, Any]:
 def test_la_especificacion_declara_exactamente_las_rutas_del_contrato(
     documento: dict[str, Any],
 ) -> None:
-    """Las diez rutas publicas y la sonda de vivacidad, **exactamente**.
+    """Las diez rutas publicas, las dos sondas y el sitemap, **exactamente**.
 
-    **La expectativa cambio en `Task/011`, en `Task/012` y en `Task/016`**, las
-    tres por un cambio de requisito —el primero de los supuestos que
-    BACKEND_TESTING_STRATEGY.md seccion 9 admite—: hasta `Task/011` no existia
-    ningun endpoint administrativo, hasta `Task/012` no existia el CRUD, y hasta
-    `Task/016` no existia `sitemap.xml` (requisito E-05).
+    **La expectativa cambio en `Task/011`, en `Task/012`, en `Task/016` y ahora
+    en `Task/017`**, las cuatro por un cambio de requisito —el primero de los
+    supuestos que BACKEND_TESTING_STRATEGY.md seccion 9 admite—: hasta
+    `Task/011` no existia ningun endpoint administrativo, hasta `Task/012` no
+    existia el CRUD, hasta `Task/016` no existia `sitemap.xml` (requisito E-05)
+    y hasta `Task/017` no existia `GET /ready` (requisito O-04).
 
     Lo que la prueba protege **no** cambia, y el conjunto sigue siendo cerrado y
     escrito a mano: una ruta publica nueva sigue teniendo que anotarse aqui para

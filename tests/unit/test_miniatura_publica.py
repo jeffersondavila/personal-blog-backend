@@ -85,6 +85,10 @@ class _AlmacenamientoQueFirmaLocalmente(ObjectStorage):
     def eliminar(self, clave: str) -> None:  # pragma: no cover - no se usa
         raise NotImplementedError
 
+    def comprobar_disponibilidad(self) -> None:
+        """Este doble siempre esta disponible: `Task/017` no cambia estas pruebas."""
+        return None
+
 
 def _medio(*, con_alt: str | None = "Una portada") -> MediaAsset:
     return MediaAsset(

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Final
 from urllib.parse import urlsplit
 
 from app.shared.storage.errores import ConfiguracionDeAlmacenamientoInvalidaError
-from app.shared.storage.s3_compatible import AlmacenamientoCompatibleS3
+from app.shared.storage.s3_compatible import AlmacenamientoCompatibleS3, opciones_de_sonda
 
 if TYPE_CHECKING:  # pragma: no cover - solo para el tipado estatico
     from mypy_boto3_s3.client import S3Client
@@ -108,7 +108,11 @@ class MinIOStorage(AlmacenamientoCompatibleS3):
             return None
         return self._construir_cliente(self.access_endpoint_url)
 
-    def _construir_cliente(self, endpoint_url: str) -> S3Client:
+    def _crear_cliente_de_sonda(self) -> S3Client:
+        """Cliente de la sonda de disponibilidad: mismo endpoint, timeouts cortos."""
+        return self._construir_cliente(self.endpoint_url, para_sonda=True)
+
+    def _construir_cliente(self, endpoint_url: str, *, para_sonda: bool = False) -> S3Client:
         """Cliente apuntado a `endpoint_url`, con direccionamiento por ruta.
 
         `addressing_style="path"` no es opcional: el estilo virtual convertiria
@@ -117,11 +121,21 @@ class MinIOStorage(AlmacenamientoCompatibleS3):
         import boto3
         from botocore.config import Config
 
+        opciones: dict[str, object] = {
+            "signature_version": "s3v4",
+            "s3": {"addressing_style": "path"},
+        }
+        if para_sonda:
+            opciones.update(opciones_de_sonda())
+
+        # El diccionario heterogeneo no expresa los tipos por clave de Config.
+        # Resolverlo antes evita contaminar la seleccion del overload S3Client.
+        configuracion = Config(**opciones)  # type: ignore[arg-type]
         return boto3.client(
             "s3",
             endpoint_url=endpoint_url,
             aws_access_key_id=self._access_key,
             aws_secret_access_key=self._secret_key,
             region_name=self.region,
-            config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+            config=configuracion,
         )

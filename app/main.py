@@ -14,7 +14,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from app import __version__
-from app.api import health_router
+from app.api import health_router, readiness_router
 from app.api.admin import routers_administrativos
 from app.api.public import routers_publicos
 from app.modules.authentication.presentation import router as authentication_router
@@ -22,6 +22,7 @@ from app.modules.sitemap.presentation import router as sitemap_router
 from app.shared.configuration import Settings, get_settings
 from app.shared.errors.handlers import register_error_handlers
 from app.shared.logging import configure_logging, get_logger
+from app.shared.logging.middleware import CorrelacionDePeticiones
 
 _logger = get_logger(__name__)
 
@@ -76,8 +77,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # proceso. Lo usan las pruebas para no depender del `.env` local.
         application.dependency_overrides[get_settings] = lambda: resolved
 
+    # Correlacion y evento de peticion (`Task/017`, requisitos O-01 y O-02).
+    # Se anade el primero, asi que envuelve a todo lo demas: cubre tambien las
+    # respuestas que produce el propio enrutado —un `404` de ruta inexistente, un
+    # `405`— y las excepciones que escapan de los manejadores.
+    application.add_middleware(CorrelacionDePeticiones)
+
     register_error_handlers(application)
     application.include_router(health_router)
+    # `GET /ready` (`Task/017`, requisito O-04). Fuera del prefijo versionado
+    # con el mismo criterio que `/health`: la consume la plataforma —Docker,
+    # Traefik, mas adelante API Gateway—, no el contrato de datos del frontend.
+    application.include_router(readiness_router)
 
     # `GET /sitemap.xml` (`Task/016`, requisito E-05). Fuera del prefijo
     # versionado con el mismo criterio que `/health`: el prefijo versiona el
