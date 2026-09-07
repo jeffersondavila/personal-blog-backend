@@ -19,10 +19,12 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-#: Las **diez** rutas publicas de `Task/009`, la sonda de vivacidad y el sitemap
-#: que anadio `Task/016` (requisito E-05).
+#: Las **diez** rutas publicas de `Task/009`, las **dos sondas de plataforma**
+#: —`/health` y la de disponibilidad que anadio `Task/017` (requisito O-04)— y el
+#: sitemap que anadio `Task/016` (requisito E-05).
 RUTAS_PUBLICAS = {
     "/health",
+    "/ready",
     "/sitemap.xml",
     "/api/v1/profile",
     "/api/v1/posts",
@@ -166,10 +168,16 @@ def test_la_api_publica_sigue_siendo_de_solo_lectura(documento: dict[str, Any]) 
 def test_la_especificacion_declara_exactamente_las_rutas_del_contrato(
     documento: dict[str, Any],
 ) -> None:
-    """Las 11 publicas, las 3 de acceso y las **24** administrativas.
+    """Las **13** publicas, las 3 de acceso y las **24** administrativas.
 
-    La 24.ª es la de solo lectura del historial, anadida por `Task/012.1`: el
-    inventario pasa de **26 a 27 patrones de ruta**.
+    La 24.ª administrativa es la de solo lectura del historial, anadida por
+    `Task/012.1`. Del lado publico, `Task/016` anadio `sitemap.xml` y `Task/017`
+    anade `GET /ready`: el inventario queda en **40 patrones de ruta**.
+
+    **La expectativa cambia en `Task/017` por un cambio de requisito** —el primer
+    supuesto de BACKEND_TESTING_STRATEGY.md seccion 9—: la sonda de
+    disponibilidad O-04 se implementa en esta tarea. El conjunto sigue siendo
+    **cerrado** y escrito a mano: una ruta nueva no entra sola.
     """
     assert set(documento["paths"]) == (
         RUTAS_PUBLICAS | RUTAS_DE_AUTENTICACION | RUTAS_ADMINISTRATIVAS
@@ -177,7 +185,12 @@ def test_la_especificacion_declara_exactamente_las_rutas_del_contrato(
 
 
 def test_el_contrato_publico_de_task_009_no_cambia(documento: dict[str, Any]) -> None:
-    """Regresion: `Task/012` no toca ninguna ruta publica."""
+    """Regresion: `Task/012` no toca ninguna ruta publica.
+
+    `Task/017` tampoco toca ninguna: **anade** la sonda `GET /ready`, que es
+    superficie de plataforma nueva, y deja intactas las diez rutas de contrato,
+    la sonda de vivacidad y el sitemap.
+    """
     publicas = {ruta for ruta in documento["paths"] if not ruta.startswith("/api/v1/admin")}
 
     assert publicas == RUTAS_PUBLICAS

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from app.shared.storage.s3_compatible import AlmacenamientoCompatibleS3
+from app.shared.storage.s3_compatible import AlmacenamientoCompatibleS3, opciones_de_sonda
 
 if TYPE_CHECKING:  # pragma: no cover - solo para el tipado estatico
     from mypy_boto3_s3.client import S3Client
@@ -72,7 +72,11 @@ class S3Storage(AlmacenamientoCompatibleS3):
             return None
         return self._construir_cliente(self.access_endpoint_url)
 
-    def _construir_cliente(self, endpoint_url: str | None) -> S3Client:
+    def _crear_cliente_de_sonda(self) -> S3Client:
+        """Cliente de la sonda de disponibilidad: mismo endpoint, timeouts cortos."""
+        return self._construir_cliente(self.endpoint_url, para_sonda=True)
+
+    def _construir_cliente(self, endpoint_url: str | None, *, para_sonda: bool = False) -> S3Client:
         """Cliente de S3 apuntado a `endpoint_url`, o al de AWS si es `None`."""
         import boto3
         from botocore.config import Config
@@ -80,6 +84,8 @@ class S3Storage(AlmacenamientoCompatibleS3):
         opciones: dict[str, object] = {"signature_version": "s3v4"}
         if endpoint_url is not None:
             opciones["s3"] = {"addressing_style": "path"}
+        if para_sonda:
+            opciones.update(opciones_de_sonda())
 
         return boto3.client(
             "s3",

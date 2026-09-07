@@ -87,6 +87,15 @@ class AlmacenamientoFalso(ObjectStorage):
     ) -> AccesoTemporal:  # pragma: no cover - no se usa aqui
         return AccesoTemporal(url=f"http://falso/{clave}", expira_en=datetime.now())
 
+    def comprobar_disponibilidad(self) -> None:  # pragma: no cover - no se usa aqui
+        """Este doble siempre esta disponible.
+
+        **No** se anota en `llamadas`: estas pruebas afirman sobre la secuencia
+        de operaciones de la subida, y una sonda que nunca se invoca aqui no
+        puede aparecer en ella.
+        """
+        return None
+
 
 class RepositorioFalso:
     """Repositorio en memoria que puede fallar al registrar."""

@@ -123,6 +123,49 @@ class ObjectStorage(ABC):
         """Borra la clave. **Idempotente**: no lanza si no existia."""
 
     @abstractmethod
+    def comprobar_disponibilidad(self) -> None:
+        """Comprueba que el almacenamiento configurado esta **utilizable**.
+
+        Anadida en `Task/017` para el requisito **O-04**: `GET /ready` debe
+        comprobar *"disponibilidad real"*, y ninguna de las cinco operaciones
+        anteriores servia. `guardar` y `eliminar` **mutan**; `obtener` descarga
+        bytes; `acceso_temporal` firma en local **sin viajar a la red**, asi que
+        funciona aunque el almacenamiento este caido; y `existe` no distingue
+        *"el bucket esta y la clave no"* de *"el bucket no esta"* —medido contra
+        MinIO real: las dos respuestas son `404 Code='404'`, identicas—.
+
+        Ese ultimo punto es el motivo de que este metodo exista. Con `existe`,
+        `/ready` habria respondido `200` con el bucket ausente.
+
+        Semantica
+        ---------
+
+        - **Retorna** sin valor si el almacenamiento esta disponible.
+        - **Lanza** `ErrorDeAlmacenamiento` si no lo esta, con el motivo ya
+          saneado: sin credenciales, sin URL firmada y sin traza del SDK.
+
+        Garantias
+        ---------
+
+        - Hace una **operacion real de red**: no se conforma con que la
+          configuracion exista o el cliente se haya podido construir.
+        - Es de **solo lectura**: no crea, no modifica y no elimina ningun
+          objeto. Una sonda que muta no es una sonda.
+
+        Que **no** demuestra
+        --------------------
+
+        Comprueba que el endpoint responde, que las credenciales sirven para la
+        propia sonda y que el **bucket configurado existe y es accesible**.
+
+        **No demuestra permisos de escritura.** `PutObject` y `DeleteObject`
+        solo se demostrarian ejecutandolos, y eso mutaria el almacenamiento en
+        cada sonda. `/ready` no es, por tanto, una garantia de que una subida
+        vaya a funcionar; es una garantia de que el almacenamiento esta ahi y
+        responde. La politica de permisos de produccion es de `Task/030`.
+        """
+
+    @abstractmethod
     def acceso_temporal(self, clave: str, *, duracion: timedelta) -> AccesoTemporal:
         """Emite un enlace de lectura valido durante `duracion`.
 

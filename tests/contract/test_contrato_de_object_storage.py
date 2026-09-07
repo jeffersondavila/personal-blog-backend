@@ -281,3 +281,33 @@ def test_ningun_byte_se_corrompe_en_un_payload_binario_completo(
     recuperado = almacenamiento.obtener(clave)
     assert recuperado.contenido == contenido
     assert recuperado.tamano_bytes == len(contenido)
+
+
+# --- Sonda de disponibilidad (`Task/017`, requisito O-04) -----------------
+
+
+def test_comprobar_disponibilidad_no_lanza_con_el_bucket_accesible(
+    almacenamiento: ObjectStorage,
+) -> None:
+    """Ambas implementaciones deben coincidir tambien en el camino correcto."""
+    almacenamiento.comprobar_disponibilidad()
+
+
+def test_comprobar_disponibilidad_no_lanza_con_el_bucket_vacio(
+    almacenamiento: ObjectStorage,
+) -> None:
+    """Un bucket sin objetos **esta** disponible: vacio no es ausente."""
+    almacenamiento.comprobar_disponibilidad()
+
+
+def test_comprobar_disponibilidad_no_crea_ni_borra_nada(
+    almacenamiento: ObjectStorage, prefijo_de_la_prueba: str
+) -> None:
+    """La sonda es de solo lectura, y eso es parte del contrato, no del adaptador."""
+    clave = f"{prefijo_de_la_prueba}/testigo-de-la-sonda.txt"
+    almacenamiento.guardar(clave=clave, contenido=b"testigo", tipo_de_contenido="text/plain")
+
+    almacenamiento.comprobar_disponibilidad()
+
+    assert almacenamiento.existe(clave), "la sonda borro un objeto ajeno"
+    assert not almacenamiento.existe("_readiness/"), "la sonda creo un centinela"
