@@ -104,6 +104,10 @@ MODULOS_CONOCIDOS = {
     f"{PAQUETE_DEL_HARNESS}.test_hermeticidad_de_la_integracion",
     f"{PAQUETE_DEL_HARNESS}.test_medios_persistidos",
     f"{PAQUETE_DEL_HARNESS}.test_migrations",
+    # `Task/017`: correlacion extremo a extremo y las dos caras de `/ready`.
+    f"{PAQUETE_DEL_HARNESS}.test_auditoria_correlacion",
+    f"{PAQUETE_DEL_HARNESS}.test_readiness_almacenamiento",
+    f"{PAQUETE_DEL_HARNESS}.test_readiness_dependencias",
 }
 
 #: Fixtures propias de pytest: no forman parte del harness y no pueden alcanzar
@@ -179,6 +183,13 @@ FIXTURES_CONOCIDAS = {
     "database_engine",
     "database_settings",
     "tabla_de_pruebas",
+    # `Task/017`. Se anotan aqui por la misma razon que las anteriores: son
+    # fixtures publicas del harness, y registrarlas impide que la inspeccion
+    # deje de encontrarlas sin que nadie se entere.
+    "bucket_exclusivo_de_sonda",
+    "cliente_de_inspeccion",
+    "cliente_real",
+    "configuracion_real",
 }
 
 

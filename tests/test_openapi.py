@@ -56,11 +56,21 @@ def test_openapi_no_declara_endpoints_no_implementados(client: TestClient) -> No
     eliminarse, y lo que se comprueba ahora es justamente eso, con una condicion
     mas fuerte que una simple ausencia.
 
+    **Y vuelve a cambiar en `Task/017`**, de nuevo por el primer supuesto: esta
+    prueba afirmaba `"/ready" not in rutas` porque la sonda de disponibilidad
+    *"es de `Task/017`"*. Esta **es** `Task/017`, y `GET /ready` ya existe
+    (requisito O-04), asi que esa afirmacion describe un requisito que ya no
+    rige. La expectativa no se relaja para acomodarla: se sustituye por una
+    **mas fuerte** que la simple ausencia, igual que se hizo con la auditoria en
+    `Task/012.1`. Se exige que la sonda este declarada y que sea de **solo
+    lectura**, que es la propiedad que de verdad importa de una sonda que Traefik
+    ejecuta cada diez segundos.
+
     Lo que no cambia es lo que la prueba protege: que no aparezca documentado
     nada que no se haya implementado. Se sigue comprobando sobre lo que
     corresponde a las tareas siguientes:
 
-    - `/ready` es de `Task/017`.
+    - Las dos sondas de plataforma, `/health` y `/ready`, no admiten escritura.
     - La auditoria se expone **solo para leerla**, en una unica ruta.
 
     La comprobacion **exacta** del conjunto de rutas vive en
@@ -72,7 +82,10 @@ def test_openapi_no_declara_endpoints_no_implementados(client: TestClient) -> No
     rutas = set(document["paths"])
 
     assert "/health" in rutas
-    assert "/ready" not in rutas, "`/ready` es de `Task/017` y no debe existir todavia"
+    assert "/ready" in rutas, "`Task/017` implementa la sonda de disponibilidad (O-04)"
+    assert set(document["paths"]["/ready"]) == {"get"}, (
+        "una sonda de plataforma se consulta: la ruta no admite escritura"
+    )
 
     de_auditoria = [ruta for ruta in rutas if "audit" in ruta]
 

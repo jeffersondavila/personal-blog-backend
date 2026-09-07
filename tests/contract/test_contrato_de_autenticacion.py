@@ -249,14 +249,21 @@ def test_el_contrato_publico_no_cambia(documento: dict[str, Any]) -> None:
     """Las diez rutas publicas de `Task/009` siguen intactas.
 
     Lo que esta prueba protege es que **la autenticacion no toca la API
-    publica**. El conjunto incluye ademas la sonda de vivacidad y, desde
-    `Task/016`, `sitemap.xml` (requisito E-05): ninguno de los dos cuelga del
-    prefijo versionado, y ninguno exige autenticacion.
+    publica**. El conjunto incluye ademas las sondas de plataforma y,
+    desde `Task/016`, `sitemap.xml` (requisito E-05): ninguno cuelga del prefijo
+    versionado, y ninguno exige autenticacion.
+
+    **La expectativa cambia en `Task/017`** por un cambio de requisito —primer
+    supuesto de BACKEND_TESTING_STRATEGY.md seccion 9—: la tarea implementa
+    `GET /ready` (requisito O-04). Que sea **anonima** no es un descuido de esta
+    lista, es parte de lo que la prueba afirma: Traefik la consulta sin
+    credenciales.
     """
     publicas = {ruta for ruta in documento["paths"] if "/admin" not in ruta}
 
     assert publicas == {
         "/health",
+        "/ready",
         "/sitemap.xml",
         "/api/v1/profile",
         "/api/v1/posts",

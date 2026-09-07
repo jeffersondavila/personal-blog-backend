@@ -28,6 +28,9 @@ import time
 from datetime import UTC, datetime
 from typing import Any, Final
 
+from app.shared.logging.contexto import es_request_id_valido, request_id_actual
+from app.shared.logging.redaccion import redactar_contexto, redactar_texto
+
 # Atributos que `logging.LogRecord` trae de serie. Todo lo que no este aqui se
 # considera contexto anadido por quien registra y se emite dentro de `context`.
 _RESERVED_RECORD_ATTRIBUTES: Final[frozenset[str]] = frozenset(
@@ -94,6 +97,19 @@ class UtcClockFormatter(logging.Formatter):
 class UtcTextFormatter(UtcClockFormatter):
     """Formato de texto legible, con la marca de tiempo en UTC."""
 
+    def format(self, record: logging.LogRecord) -> str:
+        texto = redactar_texto(super().format(record))
+        contexto = redactar_contexto(
+            {
+                clave: valor
+                for clave, valor in record.__dict__.items()
+                if clave not in _RESERVED_RECORD_ATTRIBUTES and not clave.startswith("_")
+            }
+        )
+        if contexto:
+            texto += " " + json.dumps(contexto, ensure_ascii=False, default=str)
+        return texto
+
 
 class JsonLogFormatter(UtcClockFormatter):
     """Formatea cada registro como una sola linea JSON.
@@ -111,7 +127,10 @@ class JsonLogFormatter(UtcClockFormatter):
             "timestamp": format_utc_timestamp(record.created),
             "level": record.levelname,
             "logger": record.name,
-            "message": record.getMessage(),
+            # El mensaje pasa por el redactor porque un secreto puede llegar
+            # interpolado en el propio texto, sin ninguna clave que lo delate
+            # (requisito O-08, riesgo R-36).
+            "message": redactar_texto(record.getMessage()),
             "module": record.module,
             "line": record.lineno,
         }
@@ -121,15 +140,48 @@ class JsonLogFormatter(UtcClockFormatter):
             for key, value in record.__dict__.items()
             if key not in _RESERVED_RECORD_ATTRIBUTES and not key.startswith("_")
         }
+        context = redactar_contexto(context)
         if context:
             payload["context"] = context
 
+        # La traza es la via de fuga que R-36 describe: una excepcion de driver
+        # puede traer la cadena de conexion entera. Se redacta el texto ya
+        # formateado, que incluye la cadena de `__cause__`.
         if record.exc_info is not None:
-            payload["exception"] = self.formatException(record.exc_info)
+            payload["exception"] = redactar_texto(self.formatException(record.exc_info))
         if record.stack_info is not None:
-            payload["stack"] = self.formatStack(record.stack_info)
+            payload["stack"] = redactar_texto(self.formatStack(record.stack_info))
 
         return json.dumps(payload, ensure_ascii=False, default=str)
+
+
+class FiltroDeCorrelacion(logging.Filter):
+    """Anade `request_id` a todo registro emitido dentro de una peticion.
+
+    Es un `Filter` y no un `Formatter` propio por dos razones: el valor queda
+    como atributo del `LogRecord`, asi que aparece **tambien** con
+    `BLOG_LOG_FORMAT=text`; y el formateador no necesita conocer el concepto de
+    peticion.
+
+    Fuera de una peticion —el arranque, un script— no hay identificador y **no
+    se inventa uno**: su ausencia significa "esto no ocurrio dentro de ninguna
+    peticion", que es informacion util.
+
+    Nunca sobrescribe un `request_id` que el llamante haya pasado de forma
+    explicita en `extra`.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if not hasattr(record, "request_id"):
+            actual = request_id_actual()
+            if actual is None and record.name == "uvicorn.error" and record.exc_info:
+                # ASGI ya restauro el contexto cuando Uvicorn emite este error.
+                candidato = getattr(record.exc_info[1], "_blog_request_id", None)
+                if isinstance(candidato, str) and es_request_id_valido(candidato):
+                    actual = candidato
+            if actual is not None:
+                record.request_id = actual
+        return True
 
 
 def configure_logging(level: str = "INFO", log_format: str = "json") -> None:
@@ -140,6 +192,7 @@ def configure_logging(level: str = "INFO", log_format: str = "json") -> None:
     """
     handler = logging.StreamHandler(stream=sys.stdout)
     handler.setFormatter(JsonLogFormatter() if log_format == "json" else _text_formatter())
+    handler.addFilter(FiltroDeCorrelacion())
 
     root = logging.getLogger()
     for existing in list(root.handlers):
@@ -153,6 +206,15 @@ def configure_logging(level: str = "INFO", log_format: str = "json") -> None:
         uvicorn_logger = logging.getLogger(name)
         uvicorn_logger.handlers.clear()
         uvicorn_logger.propagate = True
+
+    # `uvicorn.access` queda silenciado desde `Task/017`: lo **sustituye** el
+    # evento de peticion de `middleware.py`, que dice lo mismo y ademas lleva
+    # `request_id` y `duration_ms` como campos propios en lugar de una cadena.
+    #
+    # Se silencia SOLO el logger de acceso. `uvicorn.error` —arranque, apagado y
+    # errores del servidor— se conserva intacto: perderlo dejaria el proceso sin
+    # diagnostico de servidor, que es un precio que esta tarea no paga.
+    logging.getLogger("uvicorn.access").disabled = True
 
 
 def _text_formatter() -> logging.Formatter:
