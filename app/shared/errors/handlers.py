@@ -59,8 +59,18 @@ ERROR_CODE_BY_STATUS: Final[dict[int, str]] = {
 }
 
 _GENERIC_MESSAGE_BY_STATUS: Final[dict[int, str]] = {
+    HTTPStatus.BAD_REQUEST: "La peticion no es valida.",
+    HTTPStatus.UNAUTHORIZED: "Se requiere autenticacion.",
+    HTTPStatus.FORBIDDEN: "La peticion no esta permitida.",
     HTTPStatus.NOT_FOUND: "El recurso solicitado no existe.",
+    HTTPStatus.METHOD_NOT_ALLOWED: "El metodo no esta permitido.",
+    HTTPStatus.CONFLICT: "La peticion entra en conflicto con el estado del recurso.",
+    HTTPStatus.REQUEST_ENTITY_TOO_LARGE: "El cuerpo de la peticion supera el limite permitido.",
+    HTTPStatus.UNSUPPORTED_MEDIA_TYPE: "El tipo de contenido no esta permitido.",
+    HTTPStatus.UNPROCESSABLE_ENTITY: "La peticion no supera la validacion.",
+    HTTPStatus.TOO_MANY_REQUESTS: "Se ha superado el limite de peticiones.",
     HTTPStatus.INTERNAL_SERVER_ERROR: "Error interno del servidor.",
+    HTTPStatus.SERVICE_UNAVAILABLE: "El servicio no esta disponible temporalmente.",
 }
 
 
@@ -162,7 +172,10 @@ async def handle_request_validation_error(
     fields = [
         {
             "field": ".".join(str(part) for part in error.get("loc", ())),
-            "reason": error.get("msg", ""),
+            # Pydantic incluye str(ValueError) de validadores personalizados.
+            # Conservar la ubicacion permite corregir la entrada sin revelar
+            # SQL, valores recibidos, contexto ni mensajes internos.
+            "reason": "El valor no es valido.",
         }
         for error in exc.errors()
     ]
@@ -189,7 +202,7 @@ async def handle_http_exception(request: Request, exc: StarletteHTTPException) -
     request_id = request_id_de(request)
     status_code = exc.status_code
     code = ERROR_CODE_BY_STATUS.get(status_code, "http_error")
-    message = _GENERIC_MESSAGE_BY_STATUS.get(status_code) or str(exc.detail)
+    message = _GENERIC_MESSAGE_BY_STATUS.get(status_code, "No se pudo atender la peticion.")
     _logger.info(
         "Respuesta de error HTTP",
         extra={

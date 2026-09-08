@@ -170,7 +170,7 @@ async def cargar_imagen(
     que todos los demas.
     """
     recibido = ArchivoRecibido(
-        contenido=await archivo.read(),
+        contenido=await archivo.read(TAMANO_MAXIMO_BYTES + 1),
         nombre=archivo.filename or "sin-nombre",
         alt_text=alt_text,
     )
