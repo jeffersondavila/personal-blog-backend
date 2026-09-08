@@ -63,7 +63,7 @@ def exigir_origen_permitido(peticion: Request, settings: ConfiguracionDependenci
     La politica concreta —que metodos, que pasa sin `Origin`, por que la lista
     vacia rechaza— vive en `app.shared.security.origen`, con su justificacion.
     """
-    if not origen_permitido(
+    if len(peticion.headers.getlist("origin")) > 1 or not origen_permitido(
         metodo=peticion.method,
         origen=peticion.headers.get("origin"),
         permitidos=settings.origenes_administrativos_permitidos,

@@ -256,6 +256,10 @@ class Settings(BaseSettings):
                     "credenciales esta prohibido (requisito S-04)"
                 )
             partes = urlsplit(origen)
+            try:
+                puerto = partes.port
+            except ValueError:
+                raise ValueError("BLOG_ADMIN_ALLOWED_ORIGINS contiene un puerto invalido") from None
             if (
                 partes.scheme not in {"http", "https"}
                 or not partes.hostname
@@ -263,6 +267,10 @@ class Settings(BaseSettings):
                 or partes.query
                 or partes.fragment
                 or partes.username
+                or "*" in origen
+                or "\\" in origen
+                or any(caracter.isspace() for caracter in origen)
+                or (puerto is not None and puerto < 1)
             ):
                 raise ValueError(
                     "BLOG_ADMIN_ALLOWED_ORIGINS debe listar origenes con la forma "

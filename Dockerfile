@@ -21,7 +21,7 @@
 
 # Version de parche explicita: `3.12-slim` es una etiqueta movil que cambiaria
 # sin aviso (misma regla que en el Compose de personal-blog-infra).
-FROM python:3.12.13-slim AS builder
+FROM python:3.12.14-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea AS builder
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -40,12 +40,16 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Las dependencias directas estan fijadas con `==`. El bloqueo completo con
 # hashes exige resolver en Linux, lo que corresponde a la CI (`Task/020`).
 COPY requirements.txt ./
-RUN pip install -r requirements.txt
+RUN pip install -r requirements.txt \
+    && python -m pip uninstall --yes pip
 
 # ---------------------------------------------------------------------------
 # Imagen final
 # ---------------------------------------------------------------------------
-FROM python:3.12.13-slim AS runtime
+FROM python:3.12.14-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea AS runtime
+
+# El runtime no instala paquetes. Retira tambien el pip global de la base.
+RUN /usr/local/bin/python -m pip uninstall --yes pip
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

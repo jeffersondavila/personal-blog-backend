@@ -22,7 +22,7 @@ from app.modules.sitemap.presentation import router as sitemap_router
 from app.shared.configuration import Settings, get_settings
 from app.shared.errors.handlers import register_error_handlers
 from app.shared.logging import configure_logging, get_logger
-from app.shared.logging.middleware import CorrelacionDePeticiones
+from app.shared.security.http import AplicacionSegura
 
 _logger = get_logger(__name__)
 
@@ -55,7 +55,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     configure_logging(level=resolved.log_level, log_format=resolved.log_format)
 
-    application = FastAPI(
+    application = AplicacionSegura(
+        configuracion=resolved,
         title=resolved.app_name,
         version=__version__,
         description=_DESCRIPTION,
@@ -65,23 +66,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         redoc_url=None,
     )
 
-    # Sin middleware de CORS: en `Task/005` ningun navegador consume esta API.
-    # Los origenes permitidos se definen, por ambiente y de forma explicita, al
-    # integrar el frontend (`Task/007`) y se endurecen en `Task/018` y
-    # `Task/033`. No configurarlo es lo seguro: el valor por defecto de un
-    # navegador es denegar, y `*` esta prohibido (requisito S-04).
-
     if settings is not None:
         # La aplicacion se construyo con una configuracion explicita, asi que
         # las dependencias deben resolver esa misma y no la del entorno del
         # proceso. Lo usan las pruebas para no depender del `.env` local.
         application.dependency_overrides[get_settings] = lambda: resolved
 
-    # Correlacion y evento de peticion (`Task/017`, requisitos O-01 y O-02).
-    # Se anade el primero, asi que envuelve a todo lo demas: cubre tambien las
-    # respuestas que produce el propio enrutado —un `404` de ruta inexistente, un
-    # `405`— y las excepciones que escapan de los manejadores.
-    application.add_middleware(CorrelacionDePeticiones)
+    # AplicacionSegura envuelve tambien preflights y errores no controlados
+    # con la correlacion aprobada, CORS explicito y las cabeceras de Task018.
 
     register_error_handlers(application)
     application.include_router(health_router)

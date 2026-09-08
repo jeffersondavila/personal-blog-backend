@@ -125,6 +125,11 @@ def validar_imagen(contenido: bytes) -> ImagenValidada:
             )
 
         try:
+            # `load` no comprueba todos los CRC de PNG. `verify` inspecciona
+            # la integridad del contenedor y consume el lector: se abre otro
+            # para conservar la decodificacion real que ya exige Task010.
+            with Image.open(BytesIO(contenido)) as comprobacion:
+                comprobacion.verify()
             # Decodifica de verdad. Es lo unico que detecta un archivo cuya
             # cabecera es perfecta y cuyos datos estan truncados o corruptos.
             imagen.load()

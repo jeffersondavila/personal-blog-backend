@@ -87,10 +87,24 @@ ATRIBUTOS_INTERNOS_IGNORADOS: Final[frozenset[str]] = frozenset({"color_message"
 #: Tambien es lo que hace idempotente a `redactar_texto`.
 _MASCARAS_YA_APLICADAS: Final[frozenset[str]] = frozenset({"***", MARCADOR_DE_REDACCION})
 
-#: Contrasena dentro de una cadena de conexion: `esquema://usuario:SECRETO@host`.
-#: Solo captura la contrasena; el resto de la DSN se conserva porque **es** el
-#: diagnostico (a que anfitrion se intento conectar).
-_DSN: Final[re.Pattern[str]] = re.compile(r"(?P<inicio>://[^:/\s@]+:)(?P<secreto>[^@/\s]+)(?=@)")
+#: Credenciales dentro de una cadena de conexion: `esquema://usuario:SECRETO@host`.
+#: `_DSN` cubre la contrasena —que puede contener `/` y `:`, de ahi que la clase
+#: solo excluya `@` y espacios— y `_USUARIO_EN_URL` el usuario cuando viaja en la
+#: propia URL, con o sin contrasena detras. El **anfitrion se conserva**, porque
+#: es el diagnostico: a que servidor se intento conectar (`Task/018`).
+_DSN: Final[re.Pattern[str]] = re.compile(r"(?P<inicio>://[^:/\s@]+:)(?P<secreto>[^@\s]+)(?=@)")
+_USUARIO_EN_URL: Final[re.Pattern[str]] = re.compile(r"(?P<inicio>://)[^:/\s@]+(?=@)")
+
+# Una cabecera puede contener varios pares (Cookie) o un esquema arbitrario
+# (Authorization). Su valor completo ocupa la linea, no el primer token.
+#
+# Consecuencia deliberada: lo que siga en ESA MISMA linea tambien se descarta.
+# Es la direccion segura del error —`Cookie: a=1; b=2` no tiene un delimitador
+# fiable donde parar— y no afecta al formato JSON, donde `request_id`,
+# `status_code` y el contexto son campos propios y no viajan en el mensaje.
+_CABECERA_SENSIBLE: Final[re.Pattern[str]] = re.compile(
+    r"\b(?P<clave>Authorization|Cookie|Set-Cookie)\s*:\s*[^\r\n]*", re.IGNORECASE
+)
 
 #: Parametros de una URL prefirmada. La firma **es** la credencial: quien la lee
 #: accede al objeto sin ninguna otra autenticacion.
@@ -114,8 +128,11 @@ _SECUENCIAS_ANSI: Final[re.Pattern[str]] = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 # El grupo con comillas incluye espacios; el valor sin comillas acaba en un
 # delimitador. Los secretos opacos SIN etiqueta conservan el limite documentado.
 _VALOR_ETIQUETADO: Final[re.Pattern[str]] = re.compile(
-    r"(?P<clave>[\w-]*(?:" + "|".join(sorted(_FRAGMENTOS_SENSIBLES)) + r")[\w-]*)"
-    r"[\"']?\s*[:=]\s*(?:\[REDACTADO\]|\*{3}|[bru]?\"[^\"]*\"|[bru]?'[^']*'|[^\s,;}\]\"']+)",
+    r"(?P<clave>[\w-]*(?:"
+    + "|".join(fragmento.replace("_", "[_-]") for fragmento in sorted(_FRAGMENTOS_SENSIBLES))
+    + r")[\w-]*)"
+    r"[\"']?\s*[:=]\s*(?:\[REDACTADO\]|\*{3}|[bru]?\"(?:\\.|[^\"\\])*\"|"
+    r"[bru]?'(?:\\.|[^'\\])*'|[^\s,;}\]\"']+)",
     re.IGNORECASE,
 )
 _CORREO: Final[re.Pattern[str]] = re.compile(
@@ -127,7 +144,7 @@ _CORREO: Final[re.Pattern[str]] = re.compile(
 
 def es_clave_sensible(clave: str) -> bool:
     """Indica si un nombre de campo basta para considerar sensible su valor."""
-    normalizada = clave.lower()
+    normalizada = clave.lower().replace("-", "_")
     return any(fragmento in normalizada for fragmento in _FRAGMENTOS_SENSIBLES)
 
 
@@ -138,7 +155,9 @@ def redactar_texto(texto: str) -> str:
     un resultado distinto, asi que aplicarla dos veces da lo mismo que una.
     """
     sin_ansi = _SECUENCIAS_ANSI.sub("", texto)
-    sin_dsn = _DSN.sub(_redactar_la_dsn, sin_ansi)
+    sin_cabeceras = _CABECERA_SENSIBLE.sub(rf"\g<clave>={MARCADOR_DE_REDACCION}", sin_ansi)
+    sin_dsn = _DSN.sub(_redactar_la_dsn, sin_cabeceras)
+    sin_dsn = _USUARIO_EN_URL.sub(rf"\g<inicio>{MARCADOR_DE_REDACCION}", sin_dsn)
     sin_firma = _PARAMETROS_FIRMADOS.sub(rf"\g<clave>\g<igual>{MARCADOR_DE_REDACCION}", sin_dsn)
     sin_autorizacion = _ESQUEMA_DE_AUTORIZACION.sub(
         rf"\g<esquema> {MARCADOR_DE_REDACCION}", sin_firma
