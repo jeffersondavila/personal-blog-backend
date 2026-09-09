@@ -24,8 +24,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.modules.audit.domain.acciones import ENTIDAD_MEDIO, AccionAuditada
+from app.modules.media.domain.validacion import TAMANO_MAXIMO_BYTES
 from app.modules.media.infrastructure.models import MediaAsset
-from tests.imagenes import imagen
+from app.shared.security.http import LIMITE_CUERPO_DE_SUBIDA
+from tests.imagenes import imagen, png_de_exactamente
 from tests.integration.administracion import (
     ADMIN,
     administrador_con_sesion,
@@ -127,6 +129,32 @@ def test_un_archivo_que_no_es_imagen_se_rechaza(
     assert respuesta.status_code == 422
     assert codigo_de_error(respuesta) == "invalid_image"
     assert sesion_de_pruebas.execute(select(func.count()).select_from(MediaAsset)).scalar_one() == 0
+
+
+def test_un_archivo_mayor_que_el_limite_atraviesa_el_transporte_y_lo_rechaza_el_dominio(
+    cliente_administrativo_con_medios: TestClient, sesion_de_pruebas: Session
+) -> None:
+    """Las dos cotas de tamano componen; no se solapan (`Task/018`).
+
+    La cota ASGI de `Task/018` acota el CUERPO —sobre multipart incluido— y es
+    deliberadamente mayor que el limite del ARCHIVO de `Task/010`. Un archivo de
+    `TAMANO_MAXIMO_BYTES + 1` cae justo entre las dos: el transporte lo deja
+    pasar y quien lo rechaza es el dominio.
+
+    Sin la peticion sin sesion, la prueba no distinguiria cual de las dos capas
+    respondio: las dos contestan `413`.
+    """
+    grande = png_de_exactamente(TAMANO_MAXIMO_BYTES + 1)
+    assert len(grande) < LIMITE_CUERPO_DE_SUBIDA
+
+    archivo = {"archivo": ("grande.png", grande, "image/png")}
+    sin_sesion = cliente_administrativo_con_medios.post(MEDIOS, files=archivo)
+    assert sin_sesion.status_code == 401, "el guarda de transporte no debia verlo"
+
+    administrador_con_sesion(cliente_administrativo_con_medios, sesion_de_pruebas)
+    respuesta = cliente_administrativo_con_medios.post(MEDIOS, files=archivo)
+    assert respuesta.status_code == 413
+    assert codigo_de_error(respuesta) == "image_too_large"
 
 
 def test_un_formato_no_permitido_se_rechaza_con_415(
