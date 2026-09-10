@@ -70,6 +70,14 @@ jobs:
           --health-retries 20
 
     env:
+      # El runner opera en UTC. Con esa zona,
+      # `test_el_timestamp_no_coincide_con_la_hora_local_del_host` se omite a si
+      # misma —con la zona en UTC su comprobacion seria vacia— y la CI perderia
+      # justo la prueba que demuestra que el log NO sigue al reloj del sistema.
+      # Se fija la zona de desarrollo real para que esa prueba se ejecute de
+      # verdad. La conversion a UTC del log es explicita, asi que ninguna otra
+      # prueba depende de este valor.
+      TZ: America/Guatemala
       USUARIO_DE_POSTGRES: blog_ci
       BASE_DE_PRUEBAS: personal_blog_ci_test
       # La suite exige que exista tambien la base "de desarrollo" —el mismo
