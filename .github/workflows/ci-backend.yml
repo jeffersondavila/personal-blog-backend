@@ -135,10 +135,14 @@ jobs:
           git diff --exit-code -- requirements.lock requirements-dev.lock
 
       # `--require-hashes` es fail-closed por partida doble: pip rechaza toda
-      # distribucion cuyo digest no coincida Y exige que TODO requisito venga
-      # fijado con `==` y con hash, asi que un lock incompleto no se instala en
-      # silencio. El modo implica `--no-deps`: no hay resolucion aqui, se
-      # instala exactamente el arbol del lock.
+      # distribucion cuyo digest no coincida Y exige que TODO requisito que
+      # vaya a instalar venga fijado con `==` y con hash.
+      #
+      # El modo NO desactiva la resolucion de dependencias —eso es `--no-deps`,
+      # otra opcion—: pip sigue recorriendo el arbol y aborta en cuanto
+      # encuentra una dependencia sin fijar ni hashear. Aqui no queda nada por
+      # resolver porque el lock enumera el cierre transitivo completo, asi que
+      # se instala exactamente ese arbol y un lock incompleto falla.
       - name: Install dependencies from the lock
         run: python -m pip install --require-hashes --requirement requirements-dev.lock
 

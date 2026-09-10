@@ -97,9 +97,15 @@ resolución fija para **Linux x86_64 + CPython 3.12**:
 | `requirements-dev.lock` | Ejecución + desarrollo | La CI y el desarrollo sobre Linux, con `--require-hashes` |
 
 `--require-hashes` es *fail-closed* dos veces: `pip` rechaza toda distribución cuyo digest
-no coincida **y** exige que cada requisito venga fijado con `==` y con hash, de modo que un
-*lock* incompleto no puede instalarse en silencio. El modo implica `--no-deps`, así que la
-imagen no resuelve nada en tiempo de construcción.
+no coincida **y** exige que cada requisito que vaya a instalar venga fijado con `==` y con
+hash.
+
+**`--require-hashes` no desactiva la resolución de dependencias**, que es una opción
+distinta (`--no-deps`). `pip` sigue recorriendo el árbol; lo que hace el modo es abortar en
+cuanto encuentra una dependencia que no esté enumerada con versión exacta y hash. La
+garantía viene, por tanto, del propio *lock*: enumera el cierre transitivo completo, así
+que no queda nada que resolver libremente. Un *lock* incompleto no se instala en silencio,
+falla.
 
 Regenerar los *locks* tras tocar `pyproject.toml`:
 
@@ -125,10 +131,11 @@ python -m pip install --require-hashes -r requirements-dev.lock
 python -m pip install -e . --no-deps                 # opcional
 ```
 
-La primera orden instala exactamente el árbol bloqueado y nada más: `--require-hashes`
-implica `--no-deps`, así que no hay resolución. La segunda registra el proyecto en modo
-editable **sin volver a resolver**, y es opcional: `pytest` ya importa `app` desde la raíz
-del repositorio sin instalarlo.
+La primera orden instala exactamente el árbol bloqueado, porque el *lock* ya enumera el
+cierre transitivo completo con versión exacta y hash: `pip` no tiene nada que resolver por
+su cuenta, y si lo tuviera, abortaría. La segunda usa `--no-deps` de forma **explícita**
+para registrar el proyecto local sin volver a instalar ni resolver sus dependencias, y es
+opcional: `pytest` ya importa `app` desde la raíz del repositorio sin instalarlo.
 
 #### Por qué en Windows no se puede, y qué se hace en su lugar
 

@@ -41,10 +41,14 @@ ENV PATH="/opt/venv/bin:$PATH"
 # por distribucion, resueltas para Linux x86_64 y CPython 3.12 (`Task/020`,
 # cierre de R-14). `--require-hashes` es fail-closed por partida doble: pip
 # rechaza cualquier archivo cuyo digest no coincida **y** exige que todo
-# requisito este fijado con `==` y traiga hash, asi que un lock incompleto no
-# se instala en silencio. El modo implica `--no-deps`: no hay resolucion en
-# tiempo de construccion y la imagen no puede traer una transitiva distinta de
-# la que validaron las pruebas.
+# requisito que vaya a instalar este fijado con `==` y traiga hash.
+#
+# El modo NO desactiva la resolucion de dependencias —eso es `--no-deps`, otra
+# opcion distinta—: pip sigue recorriendo el arbol y aborta en cuanto encuentra
+# una dependencia sin fijar ni hashear. Lo que hace que aqui no quede nada por
+# resolver es el propio lock, que enumera el cierre transitivo completo. Por
+# eso la imagen no puede traer una transitiva distinta de la que validaron las
+# pruebas, y un lock incompleto falla en lugar de instalarse en silencio.
 COPY requirements.lock ./
 RUN pip install --require-hashes -r requirements.lock \
     && python -m pip uninstall --yes pip
