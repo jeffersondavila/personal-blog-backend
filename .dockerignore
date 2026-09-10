@@ -32,6 +32,8 @@ __pycache__/
 
 # Herramientas de calidad y pruebas: no forman parte de la imagen de ejecucion
 tests/
+# Utilidades de mantenimiento (generacion de locks): no entran en la imagen.
+scripts/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
