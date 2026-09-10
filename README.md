@@ -31,23 +31,14 @@ API del blog personal. **FastAPI + PostgreSQL.**
 - Roadmap, estado del proyecto, ADR → `personal-blog-infra`.
 - Secretos, credenciales o archivos `.env` reales.
 
-## 3. Estado actual
+## 3. Referencias del backend
 
-| Campo | Valor |
-| --- | --- |
-| **Etapa** | ETAPA 03 — Dominio y Backend |
-| **Tarea en curso** | `Task/010-Almacenamiento-Compatible-S3` |
-| **Implementación** | Fundación (`Task/005`), modelo de datos (`Task/008`), API pública (`Task/009`) y almacenamiento de objetos (`Task/010`) |
-| **Python** | 3.12 |
-| **Endpoints** | `GET /health` y los **diez** recursos públicos de `/api/v1`, más `GET /openapi.json` y `GET /docs` |
-| **Modelo de datos** | 14 tablas; migración `0002` es `head` |
-| **Almacenamiento** | `ObjectStorage` con `MinIOStorage` y `S3Storage` |
+El estado de las tareas, la etapa y el avance del proyecto se consultan en
+[`STATUS.md`](../personal-blog-infra/docs/project-management/STATUS.md).
 
-> Esta tabla se había quedado en `Task/005`. Se corrigió en `Task/010`; la
-> fuente de verdad del estado sigue siendo `STATUS.md`, enlazado abajo.
-
-Estado vigente del proyecto:
-[`personal-blog-infra/docs/project-management/STATUS.md`](../personal-blog-infra/docs/project-management/STATUS.md)
+Las rutas se registran en [`app/main.py`](app/main.py); las revisiones de la
+base de datos están en [`alembic/versions`](alembic/versions), y la versión de
+Python y las dependencias se declaran en [`pyproject.toml`](pyproject.toml).
 
 ---
 
@@ -67,7 +58,7 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 
 # 2. Dependencias de desarrollo (incluye las de ejecución)
-pip install -r requirements-dev.txt
+pip install -e ".[dev]"
 
 # 3. Configuración local
 Copy-Item .env.example .env
@@ -92,6 +83,45 @@ Documentación interactiva: <http://127.0.0.1:8000/docs>
 > El puerto 8000 es una convención de desarrollo, no una decisión de infraestructura: si
 > está ocupado, usa otro. El puerto definitivo del backend dentro del entorno local se fija
 > en `Task/007`.
+
+### 5.1 Dependencias: una fuente manual y dos *locks* generados
+
+`pyproject.toml` es la **única** lista de dependencias que se edita a mano. De ella se
+generan dos *locks* con las transitivas completas, un `--hash=sha256:` por distribución y
+resolución fija para **Linux x86_64 + CPython 3.12**:
+
+| Archivo | Contenido | Quién lo instala |
+| --- | --- | --- |
+| `requirements.lock` | Ejecución | El `Dockerfile`, con `--require-hashes` |
+| `requirements-dev.lock` | Ejecución + desarrollo | La CI, con `--require-hashes` |
+
+`--require-hashes` es *fail-closed* dos veces: `pip` rechaza toda distribución cuyo digest
+no coincida **y** exige que cada requisito venga fijado con `==` y con hash, de modo que un
+*lock* incompleto no puede instalarse en silencio. El modo implica `--no-deps`, así que la
+imagen no resuelve nada en tiempo de construcción.
+
+Regenerar los *locks* tras tocar `pyproject.toml`:
+
+```powershell
+uv --version                    # debe ser la versión que fija el workflow
+sh scripts/generar-locks.sh
+```
+
+El script es la única fuente de los argumentos de `uv pip compile`, incluida la fecha de
+`--exclude-newer` que congela la foto del índice. Gracias a ella la resolución es
+determinista y la CI puede regenerar y exigir `git diff --exit-code`: una diferencia
+significa que el *lock* está desfasado, nunca que PyPI publicó algo mientras tanto.
+**Actualizar dependencias es deliberado:** se mueve esa fecha, se regeneran los *locks*, se
+ejecutan los gates y se revisa el diff.
+
+En Windows, el entorno de desarrollo se instala desde `pyproject.toml`
+(`pip install -e ".[dev]"`), no desde los *locks*: son resoluciones de Linux. La autoridad
+reproducible del proyecto es Linux, que es donde corren la imagen y la CI.
+
+> Hasta `Task/020` existían además `requirements.txt` y `requirements-dev.txt`, que
+> repetían a mano las mismas dependencias directas sin transitivas ni hashes. Eran una
+> segunda fuente manual que ya había divergido, así que `Task/020` los sustituyó por estos
+> dos *locks* y cerró **R-14**.
 
 ## 6. Configuración
 
@@ -312,10 +342,38 @@ una vez, a mano:
 [runbook del entorno local §10](../personal-blog-infra/docs/runbooks/local-environment.md).
 
 El proyecto **no silencia advertencias**: no hay `filterwarnings` en `pyproject.toml`, y
-`pytest -W error` termina con **0 warnings**. El cliente de pruebas es **`httpx2`**, que es
-el que `starlette.testclient` exige desde Starlette 1.3; con el `httpx` clásico el import
-emite `StarletteDeprecationWarning` y `-W error` falla. Si eso ocurre, el entorno tiene
-dependencias antiguas: reinstala con `pip install -r requirements-dev.txt`.
+`pytest -W error` termina con **0 warnings**. La CI ejecuta la suite con `-W error`, así que
+esa propiedad se comprueba en cada ejecución en lugar de quedarse en una afirmación.
+
+El cliente de pruebas es **`httpx2`**, que es el que `starlette.testclient` exige desde
+Starlette 1.3; con el `httpx` clásico el import emite `StarletteDeprecationWarning` y
+`-W error` falla. Si eso ocurre, el entorno tiene dependencias antiguas: reinstala con
+`pip install -e ".[dev]"`.
+
+`Task/020` encontró un segundo caso de la misma familia al resolver las dependencias en
+Linux sin *lock*: **`anyio` 4.15.0 marcó obsoleto el alias `anyio.abc.BlockingPortal`** y
+`starlette.testclient` lo sigue usando, de modo que `pytest -W error` ni siquiera llegaba a
+recolectar. Como `starlette` 1.6.0 es la última publicada y no hay corrección aguas arriba,
+`pyproject.toml` acota `anyio<4.15` —con la medición y la condición de retirada escritas
+junto a la dependencia— en lugar de callar la advertencia. Es el mismo criterio con el que
+`Task/005` sustituyó `httpx` por `httpx2`.
+
+### 10.3 Integración continua
+
+[`.github/workflows/ci-backend.yml`](.github/workflows/ci-backend.yml) ejecuta el workflow
+**CI Backend** en cada `push` y cada `pull_request`, sin filtros de rama ni de ruta, con
+`permissions: contents: read` y un único job en `ubuntu-24.04`.
+
+Los gates, en orden: *lock* al día, instalación con `--require-hashes`, `pip check`,
+formato, lint, tipos, migraciones sobre PostgreSQL real, la suite completa con `-W error`,
+auditoría de dependencias con `pip-audit`, construcción de la imagen y escaneo con Trivy.
+PostgreSQL y MinIO son **efímeros del propio runner**: nacen y mueren con él, no usan
+ningún secreto del proyecto y no tocan nada del entorno local.
+
+La suite corre **secuencial a propósito**. No es seguro repartirla entre procesos que
+compartan la misma base de datos —**R-37**—, así que el workflow no usa `matrix`, ni
+`pytest-xdist`, ni particiones. El bloque `concurrency` cancela ejecuciones superadas de la
+misma referencia, que es otra cosa: cada ejecución tiene su propio PostgreSQL.
 
 ### Marcas de tiempo
 

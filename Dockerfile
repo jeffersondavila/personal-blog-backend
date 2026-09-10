@@ -34,13 +34,19 @@ WORKDIR /build
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Solo el archivo de dependencias: una capa que se reaprovecha mientras las
-# versiones no cambien.
+# Solo el archivo de dependencias: una capa que se reaprovecha mientras el lock
+# no cambie.
 #
-# Las dependencias directas estan fijadas con `==`. El bloqueo completo con
-# hashes exige resolver en Linux, lo que corresponde a la CI (`Task/020`).
-COPY requirements.txt ./
-RUN pip install -r requirements.txt \
+# `requirements.lock` lleva las transitivas completas y un `--hash=sha256:...`
+# por distribucion, resueltas para Linux x86_64 y CPython 3.12 (`Task/020`,
+# cierre de R-14). `--require-hashes` es fail-closed por partida doble: pip
+# rechaza cualquier archivo cuyo digest no coincida **y** exige que todo
+# requisito este fijado con `==` y traiga hash, asi que un lock incompleto no
+# se instala en silencio. El modo implica `--no-deps`: no hay resolucion en
+# tiempo de construccion y la imagen no puede traer una transitiva distinta de
+# la que validaron las pruebas.
+COPY requirements.lock ./
+RUN pip install --require-hashes -r requirements.lock \
     && python -m pip uninstall --yes pip
 
 # ---------------------------------------------------------------------------

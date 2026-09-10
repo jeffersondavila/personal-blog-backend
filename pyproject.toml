@@ -14,12 +14,19 @@ authors = [{ name = "jeffersondavila" }]
 # Versiones fijadas de forma exacta: la reproducibilidad es un requisito del
 # proyecto (S-09 en non-functional-requirements.md).
 #
-# `requirements.txt` repite estas mismas dependencias DIRECTAS porque el
-# Dockerfile instala desde el sin necesitar el proyecto completo. **No es un
-# lock**: no contiene dependencias transitivas ni hashes. El bloqueo
-# reproducible completo, resuelto en Linux, corresponde a `Task/020-CI-Backend`
-# y sigue registrado como riesgo R-14. Corregido en `Task/005.6`: este
-# comentario afirmaba que requirements.txt ya era ese lock.
+# **Este archivo es la unica fuente manual de dependencias del backend.**
+# `requirements.lock` (ejecucion) y `requirements-dev.lock` (ejecucion +
+# desarrollo) se GENERAN desde aqui: llevan las transitivas completas, hashes
+# `--hash=sha256:...` y resolucion fija para Linux x86_64 y CPython 3.12.
+# El Dockerfile instala desde `requirements.lock` con `--require-hashes`.
+#
+# Historia: hasta `Task/020` existian ademas `requirements.txt` y
+# `requirements-dev.txt`, que repetian a mano estas mismas dependencias
+# directas sin transitivas ni hashes. Eran una segunda fuente manual que ya
+# habia divergido —`Task/005.6` corrigio un comentario que los llamaba *lock*—,
+# asi que `Task/020` los sustituyo por los dos *locks* generados y cerro R-14.
+#
+# Regenerar los locks: README seccion 5.1.
 dependencies = [
     "fastapi==0.141.1",
     "uvicorn[standard]==0.52.1",
@@ -57,6 +64,35 @@ dependencies = [
     # **Impacto en Lambda: minimo.** Es Python puro, sin extension compilada, y
     # ocupa ~164 KB (P-07). No arrastra dependencias transitivas.
     "python-multipart==0.0.32",
+    # Cota sobre una dependencia TRANSITIVA de starlette, no una dependencia
+    # nueva: `anyio` ya entraba por starlette y esta instalado desde `Task/005`.
+    #
+    # Motivo medido en `Task/020` sobre Linux y Python 3.12.14:
+    #
+    # | anyio | starlette | `python -W error -c "import starlette.testclient"` |
+    # | --- | --- | --- |
+    # | 4.15.1 | 1.6.0 | `DeprecationWarning` -> **falla** |
+    # | 4.15.0 | 1.6.0 | `DeprecationWarning` -> **falla** |
+    # | 4.14.2 | 1.6.0 | **exit 0**, sin advertencia |
+    #
+    # `anyio` 4.15.0 marco obsoleto el alias `anyio.abc.BlockingPortal`, y
+    # `starlette.testclient` lo sigue usando en su linea 53. Con la resolucion
+    # sin cota, `pytest -W error` no llega ni a recolectar: el import falla.
+    # `starlette` 1.6.0 es la ultima version publicada, asi que **no existe una
+    # correccion aguas arriba** que adoptar hoy.
+    #
+    # La cota va en `[project].dependencies`, no en el extra `dev`, a proposito:
+    # si solo cubriera desarrollo, la imagen ejecutaria un `anyio` distinto del
+    # que validan las pruebas. Ambos *locks* deben resolver la misma version.
+    #
+    # **Como se retira:** cuando starlette publique una version que use
+    # `anyio.from_thread.BlockingPortal`, se elimina esta cota, se regeneran los
+    # dos *locks* y se comprueba que `pytest -W error` sigue en verde.
+    #
+    # El proyecto **no silencia la advertencia**: no se anade `filterwarnings`.
+    # Es el mismo criterio que aplico `Task/005` al sustituir `httpx` por
+    # `httpx2` en lugar de callar el `StarletteDeprecationWarning`.
+    "anyio<4.15",
 ]
 
 [project.optional-dependencies]
@@ -64,7 +100,23 @@ dev = [
     "pytest==9.1.1",
     "pytest-cov==7.1.0",
     # Cliente exigido por `starlette.testclient` desde Starlette 1.3.
-    "httpx2==2.10.0",
+    #
+    # Subido de 2.10.0 a 2.12.0 en `Task/020`, no por comodidad: `pip-audit`
+    # sobre el lock de desarrollo devolvio tres vulnerabilidades conocidas de
+    # 2.10.0, todas con correccion publicada.
+    #
+    # | Identificador | CVSS 3.1 | Corregida en |
+    # | --- | --- | --- |
+    # | CVE-2026-84379 — inyeccion de cabeceras de parte en multipart | 5.3 | 2.11.0 |
+    # | CVE-2026-84380 — Content-Length y Transfer-Encoding a la vez | 5.6 | 2.11.0 |
+    # | CVE-2026-84382 — descompresion sin acotar la memoria | **7.5** | 2.12.0 |
+    #
+    # `httpx2` no viaja a produccion: no aparece en `requirements.lock`, no
+    # entra en la imagen ni en el artefacto de Lambda, y las tres exigen un
+    # servidor hostil, que en la suite no existe. Aun asi se corrige: la
+    # politica de S-09 no admite ignorar un hallazgo que TIENE arreglo, y una
+    # excepcion documentada seguiria siendo una excepcion.
+    "httpx2==2.12.0",
     "ruff==0.16.1",
     "mypy==2.3.0",
     # Tipos de boto3 para mypy en modo estricto. Solo tipado: no entra en la
