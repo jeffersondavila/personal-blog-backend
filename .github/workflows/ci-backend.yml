@@ -30,13 +30,17 @@ env:
   PIP_DISABLE_PIP_VERSION_CHECK: '1'
   # Mismo parche que fija el Dockerfile por digest.
   VERSION_DE_PYTHON: '3.12.14'
-  # Herramientas externas: version exacta Y digest del artefacto descargado.
-  # Fijar solo la version confiaria en que la etiqueta del release no se
-  # reescriba; el digest lo hace comprobable.
+  # `uv` y Trivy se descargan como tarball: version exacta Y digest del
+  # artefacto, comprobado con `sha256sum` en su propio paso. Fijar solo la
+  # version confiaria en que la etiqueta del release no se reescriba.
   VERSION_DE_UV: '0.12.12'
   SHA256_DE_UV: 'ab9b309d4586403f024e100abaceb396616e178a553e2500c36087d180f09509'
   VERSION_DE_TRIVY: '0.74.0'
   SHA256_DE_TRIVY: '2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a'
+  # `pip-audit` NO lleva digest: `uv tool run` lo resuelve desde PyPI fijado a
+  # esta version exacta, y esa es toda la garantia que hay aqui. No se anade
+  # maquinaria de hashes para una herramienta que solo lee metadatos y no entra
+  # ni en la imagen ni en el arbol de dependencias del proyecto.
   VERSION_DE_PIP_AUDIT: '2.10.1'
   IMAGEN_DE_MINIO: 'minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e'
   IMAGEN_DE_LA_CI: 'personal-blog-backend:ci'

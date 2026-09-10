@@ -58,6 +58,7 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 
 # 2. Dependencias de desarrollo (incluye las de ejecución)
+# OJO: en Windows esta orden NO instala el árbol bloqueado. Ver 5.1.
 pip install -e ".[dev]"
 
 # 3. Configuración local
@@ -93,7 +94,7 @@ resolución fija para **Linux x86_64 + CPython 3.12**:
 | Archivo | Contenido | Quién lo instala |
 | --- | --- | --- |
 | `requirements.lock` | Ejecución | El `Dockerfile`, con `--require-hashes` |
-| `requirements-dev.lock` | Ejecución + desarrollo | La CI, con `--require-hashes` |
+| `requirements-dev.lock` | Ejecución + desarrollo | La CI y el desarrollo sobre Linux, con `--require-hashes` |
 
 `--require-hashes` es *fail-closed* dos veces: `pip` rechaza toda distribución cuyo digest
 no coincida **y** exige que cada requisito venga fijado con `==` y con hash, de modo que un
@@ -114,9 +115,48 @@ significa que el *lock* está desfasado, nunca que PyPI publicó algo mientras t
 **Actualizar dependencias es deliberado:** se mueve esa fecha, se regeneran los *locks*, se
 ejecutan los gates y se revisa el diff.
 
-En Windows, el entorno de desarrollo se instala desde `pyproject.toml`
-(`pip install -e ".[dev]"`), no desde los *locks*: son resoluciones de Linux. La autoridad
-reproducible del proyecto es Linux, que es donde corren la imagen y la CI.
+#### Instalar respetando el *lock*
+
+Donde el *lock* es instalable —Linux, WSL o un contenedor— el procedimiento que **sí**
+reproduce el árbol exacto es:
+
+```sh
+python -m pip install --require-hashes -r requirements-dev.lock
+python -m pip install -e . --no-deps                 # opcional
+```
+
+La primera orden instala exactamente el árbol bloqueado y nada más: `--require-hashes`
+implica `--no-deps`, así que no hay resolución. La segunda registra el proyecto en modo
+editable **sin volver a resolver**, y es opcional: `pytest` ya importa `app` desde la raíz
+del repositorio sin instalarlo.
+
+#### Por qué en Windows no se puede, y qué se hace en su lugar
+
+**Los dos *locks* son artefactos de Linux por construcción.** `uv` resuelve para una sola
+plataforma y **aplana los marcadores de entorno** al escribirlos, así que ambos archivos
+listan `uvloop==0.22.1` sin condición. Pero `uvicorn[standard]` lo declara como
+`uvloop>=0.15.1; sys_platform != 'win32'`, y `uvloop` **no publica ninguna distribución
+para Windows** (49 archivos en la versión 0.22.1, 0 de Windows). Comprobado el 2026-09-10:
+`pip install --require-hashes -r requirements-dev.lock` en Windows falla al intentar
+construir ese `sdist`.
+
+Por eso, en Windows la única vía es `pip install -e ".[dev]"`, y **hay que saber lo que
+es**: una resolución libre desde `pyproject.toml`, no el árbol bloqueado. Las versiones
+directas quedan fijadas con `==` y la cota de `anyio` se respeta, pero las transitivas
+pueden diferir del *lock*.
+
+**Alcance de la garantía de R-14, sin ambigüedad:**
+
+| Entorno | Instala con | ¿Árbol bloqueado? |
+| --- | --- | --- |
+| Imagen Docker | `requirements.lock` + `--require-hashes` | **Sí** |
+| CI | `requirements-dev.lock` + `--require-hashes` | **Sí** |
+| Linux / WSL / contenedor | `requirements-dev.lock` + `--require-hashes` | **Sí** |
+| Windows | `pip install -e ".[dev]"` | **No**, resolución libre |
+
+El `.venv` de Windows es una comodidad de desarrollo, **no la referencia**. La autoridad
+sobre lo que se despliega son la imagen y la CI, que sí instalan desde el *lock*. Quien
+necesite reproducir el árbol exacto en su máquina, que use WSL o el contenedor.
 
 > Hasta `Task/020` existían además `requirements.txt` y `requirements-dev.txt`, que
 > repetían a mano las mismas dependencias directas sin transitivas ni hashes. Eran una
@@ -347,8 +387,8 @@ esa propiedad se comprueba en cada ejecución en lugar de quedarse en una afirma
 
 El cliente de pruebas es **`httpx2`**, que es el que `starlette.testclient` exige desde
 Starlette 1.3; con el `httpx` clásico el import emite `StarletteDeprecationWarning` y
-`-W error` falla. Si eso ocurre, el entorno tiene dependencias antiguas: reinstala con
-`pip install -e ".[dev]"`.
+`-W error` falla. Si eso ocurre, el entorno tiene dependencias antiguas: reinstálalas por
+la vía que corresponda a tu sistema, según la tabla de [§5.1](#51-dependencias-una-fuente-manual-y-dos-locks-generados).
 
 `Task/020` encontró un segundo caso de la misma familia al resolver las dependencias en
 Linux sin *lock*: **`anyio` 4.15.0 marcó obsoleto el alias `anyio.abc.BlockingPortal`** y
