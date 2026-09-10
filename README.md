@@ -31,23 +31,14 @@ API del blog personal. **FastAPI + PostgreSQL.**
 - Roadmap, estado del proyecto, ADR → `personal-blog-infra`.
 - Secretos, credenciales o archivos `.env` reales.
 
-## 3. Estado actual
+## 3. Referencias del backend
 
-| Campo | Valor |
-| --- | --- |
-| **Etapa** | ETAPA 03 — Dominio y Backend |
-| **Tarea en curso** | `Task/010-Almacenamiento-Compatible-S3` |
-| **Implementación** | Fundación (`Task/005`), modelo de datos (`Task/008`), API pública (`Task/009`) y almacenamiento de objetos (`Task/010`) |
-| **Python** | 3.12 |
-| **Endpoints** | `GET /health` y los **diez** recursos públicos de `/api/v1`, más `GET /openapi.json` y `GET /docs` |
-| **Modelo de datos** | 14 tablas; migración `0002` es `head` |
-| **Almacenamiento** | `ObjectStorage` con `MinIOStorage` y `S3Storage` |
+El estado de las tareas, la etapa y el avance del proyecto se consultan en
+[`STATUS.md`](../personal-blog-infra/docs/project-management/STATUS.md).
 
-> Esta tabla se había quedado en `Task/005`. Se corrigió en `Task/010`; la
-> fuente de verdad del estado sigue siendo `STATUS.md`, enlazado abajo.
-
-Estado vigente del proyecto:
-[`personal-blog-infra/docs/project-management/STATUS.md`](../personal-blog-infra/docs/project-management/STATUS.md)
+Las rutas se registran en [`app/main.py`](app/main.py); las revisiones de la
+base de datos están en [`alembic/versions`](alembic/versions), y la versión de
+Python y las dependencias se declaran en [`pyproject.toml`](pyproject.toml).
 
 ---
 
@@ -67,7 +58,8 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 
 # 2. Dependencias de desarrollo (incluye las de ejecución)
-pip install -r requirements-dev.txt
+# OJO: en Windows esta orden NO instala el árbol bloqueado. Ver 5.1.
+pip install -e ".[dev]"
 
 # 3. Configuración local
 Copy-Item .env.example .env
@@ -92,6 +84,91 @@ Documentación interactiva: <http://127.0.0.1:8000/docs>
 > El puerto 8000 es una convención de desarrollo, no una decisión de infraestructura: si
 > está ocupado, usa otro. El puerto definitivo del backend dentro del entorno local se fija
 > en `Task/007`.
+
+### 5.1 Dependencias: una fuente manual y dos *locks* generados
+
+`pyproject.toml` es la **única** lista de dependencias que se edita a mano. De ella se
+generan dos *locks* con las transitivas completas, un `--hash=sha256:` por distribución y
+resolución fija para **Linux x86_64 + CPython 3.12**:
+
+| Archivo | Contenido | Quién lo instala |
+| --- | --- | --- |
+| `requirements.lock` | Ejecución | El `Dockerfile`, con `--require-hashes` |
+| `requirements-dev.lock` | Ejecución + desarrollo | La CI y el desarrollo sobre Linux, con `--require-hashes` |
+
+`--require-hashes` es *fail-closed* dos veces: `pip` rechaza toda distribución cuyo digest
+no coincida **y** exige que cada requisito que vaya a instalar venga fijado con `==` y con
+hash.
+
+**`--require-hashes` no desactiva la resolución de dependencias**, que es una opción
+distinta (`--no-deps`). `pip` sigue recorriendo el árbol; lo que hace el modo es abortar en
+cuanto encuentra una dependencia que no esté enumerada con versión exacta y hash. La
+garantía viene, por tanto, del propio *lock*: enumera el cierre transitivo completo, así
+que no queda nada que resolver libremente. Un *lock* incompleto no se instala en silencio,
+falla.
+
+Regenerar los *locks* tras tocar `pyproject.toml`:
+
+```powershell
+uv --version                    # debe ser la versión que fija el workflow
+sh scripts/generar-locks.sh
+```
+
+El script es la única fuente de los argumentos de `uv pip compile`, incluida la fecha de
+`--exclude-newer` que congela la foto del índice. Gracias a ella la resolución es
+determinista y la CI puede regenerar y exigir `git diff --exit-code`: una diferencia
+significa que el *lock* está desfasado, nunca que PyPI publicó algo mientras tanto.
+**Actualizar dependencias es deliberado:** se mueve esa fecha, se regeneran los *locks*, se
+ejecutan los gates y se revisa el diff.
+
+#### Instalar respetando el *lock*
+
+Donde el *lock* es instalable —Linux, WSL o un contenedor— el procedimiento que **sí**
+reproduce el árbol exacto es:
+
+```sh
+python -m pip install --require-hashes -r requirements-dev.lock
+python -m pip install -e . --no-deps                 # opcional
+```
+
+La primera orden instala exactamente el árbol bloqueado, porque el *lock* ya enumera el
+cierre transitivo completo con versión exacta y hash: `pip` no tiene nada que resolver por
+su cuenta, y si lo tuviera, abortaría. La segunda usa `--no-deps` de forma **explícita**
+para registrar el proyecto local sin volver a instalar ni resolver sus dependencias, y es
+opcional: `pytest` ya importa `app` desde la raíz del repositorio sin instalarlo.
+
+#### Por qué en Windows no se puede, y qué se hace en su lugar
+
+**Los dos *locks* son artefactos de Linux por construcción.** `uv` resuelve para una sola
+plataforma y **aplana los marcadores de entorno** al escribirlos, así que ambos archivos
+listan `uvloop==0.22.1` sin condición. Pero `uvicorn[standard]` lo declara como
+`uvloop>=0.15.1; sys_platform != 'win32'`, y `uvloop` **no publica ninguna distribución
+para Windows** (49 archivos en la versión 0.22.1, 0 de Windows). Comprobado el 2026-09-10:
+`pip install --require-hashes -r requirements-dev.lock` en Windows falla al intentar
+construir ese `sdist`.
+
+Por eso, en Windows la única vía es `pip install -e ".[dev]"`, y **hay que saber lo que
+es**: una resolución libre desde `pyproject.toml`, no el árbol bloqueado. Las versiones
+directas quedan fijadas con `==` y la cota de `anyio` se respeta, pero las transitivas
+pueden diferir del *lock*.
+
+**Alcance de la garantía de R-14, sin ambigüedad:**
+
+| Entorno | Instala con | ¿Árbol bloqueado? |
+| --- | --- | --- |
+| Imagen Docker | `requirements.lock` + `--require-hashes` | **Sí** |
+| CI | `requirements-dev.lock` + `--require-hashes` | **Sí** |
+| Linux / WSL / contenedor | `requirements-dev.lock` + `--require-hashes` | **Sí** |
+| Windows | `pip install -e ".[dev]"` | **No**, resolución libre |
+
+El `.venv` de Windows es una comodidad de desarrollo, **no la referencia**. La autoridad
+sobre lo que se despliega son la imagen y la CI, que sí instalan desde el *lock*. Quien
+necesite reproducir el árbol exacto en su máquina, que use WSL o el contenedor.
+
+> Hasta `Task/020` existían además `requirements.txt` y `requirements-dev.txt`, que
+> repetían a mano las mismas dependencias directas sin transitivas ni hashes. Eran una
+> segunda fuente manual que ya había divergido, así que `Task/020` los sustituyó por estos
+> dos *locks* y cerró **R-14**.
 
 ## 6. Configuración
 
@@ -312,10 +389,38 @@ una vez, a mano:
 [runbook del entorno local §10](../personal-blog-infra/docs/runbooks/local-environment.md).
 
 El proyecto **no silencia advertencias**: no hay `filterwarnings` en `pyproject.toml`, y
-`pytest -W error` termina con **0 warnings**. El cliente de pruebas es **`httpx2`**, que es
-el que `starlette.testclient` exige desde Starlette 1.3; con el `httpx` clásico el import
-emite `StarletteDeprecationWarning` y `-W error` falla. Si eso ocurre, el entorno tiene
-dependencias antiguas: reinstala con `pip install -r requirements-dev.txt`.
+`pytest -W error` termina con **0 warnings**. La CI ejecuta la suite con `-W error`, así que
+esa propiedad se comprueba en cada ejecución en lugar de quedarse en una afirmación.
+
+El cliente de pruebas es **`httpx2`**, que es el que `starlette.testclient` exige desde
+Starlette 1.3; con el `httpx` clásico el import emite `StarletteDeprecationWarning` y
+`-W error` falla. Si eso ocurre, el entorno tiene dependencias antiguas: reinstálalas por
+la vía que corresponda a tu sistema, según la tabla de [§5.1](#51-dependencias-una-fuente-manual-y-dos-locks-generados).
+
+`Task/020` encontró un segundo caso de la misma familia al resolver las dependencias en
+Linux sin *lock*: **`anyio` 4.15.0 marcó obsoleto el alias `anyio.abc.BlockingPortal`** y
+`starlette.testclient` lo sigue usando, de modo que `pytest -W error` ni siquiera llegaba a
+recolectar. Como `starlette` 1.6.0 es la última publicada y no hay corrección aguas arriba,
+`pyproject.toml` acota `anyio<4.15` —con la medición y la condición de retirada escritas
+junto a la dependencia— en lugar de callar la advertencia. Es el mismo criterio con el que
+`Task/005` sustituyó `httpx` por `httpx2`.
+
+### 10.3 Integración continua
+
+[`.github/workflows/ci-backend.yml`](.github/workflows/ci-backend.yml) ejecuta el workflow
+**CI Backend** en cada `push` y cada `pull_request`, sin filtros de rama ni de ruta, con
+`permissions: contents: read` y un único job en `ubuntu-24.04`.
+
+Los gates, en orden: *lock* al día, instalación con `--require-hashes`, `pip check`,
+formato, lint, tipos, migraciones sobre PostgreSQL real, la suite completa con `-W error`,
+auditoría de dependencias con `pip-audit`, construcción de la imagen y escaneo con Trivy.
+PostgreSQL y MinIO son **efímeros del propio runner**: nacen y mueren con él, no usan
+ningún secreto del proyecto y no tocan nada del entorno local.
+
+La suite corre **secuencial a propósito**. No es seguro repartirla entre procesos que
+compartan la misma base de datos —**R-37**—, así que el workflow no usa `matrix`, ni
+`pytest-xdist`, ni particiones. El bloque `concurrency` cancela ejecuciones superadas de la
+misma referencia, que es otra cosa: cada ejecución tiene su propio PostgreSQL.
 
 ### Marcas de tiempo
 

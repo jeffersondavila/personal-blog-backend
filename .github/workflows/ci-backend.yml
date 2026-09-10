@@ -1,0 +1,251 @@
+# ---------------------------------------------------------------------------
+# personal-blog-backend — Integracion continua (Task/020)
+#
+# Un solo job secuencial. La suite de integracion NO es segura para ejecucion
+# concurrente sobre la misma base de datos (R-37), asi que aqui no hay
+# `matrix`, ni `pytest-xdist`, ni particiones: correrla en paralelo romperia la
+# tabla auxiliar de nombre fijo, el `downgrade base` sobre el esquema
+# compartido y el estado de proceso de las fixtures. El `concurrency` de abajo
+# es otra cosa y no tiene relacion con R-37.
+# ---------------------------------------------------------------------------
+name: CI Backend
+
+on:
+  push:
+  pull_request:
+
+# El workflow solo lee el repositorio: no publica paquetes, no comenta, no
+# escribe releases y no despliega nada.
+permissions:
+  contents: read
+
+# Cancela ejecuciones superadas de la misma referencia. Opera sobre runs
+# completos, cada uno con su propio PostgreSQL efimero, asi que no introduce la
+# concurrencia sobre una base compartida que describe R-37.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+  # Mismo parche que fija el Dockerfile por digest.
+  VERSION_DE_PYTHON: '3.12.14'
+  # `uv` y Trivy se descargan como tarball: version exacta Y digest del
+  # artefacto, comprobado con `sha256sum` en su propio paso. Fijar solo la
+  # version confiaria en que la etiqueta del release no se reescriba.
+  VERSION_DE_UV: '0.12.12'
+  SHA256_DE_UV: 'ab9b309d4586403f024e100abaceb396616e178a553e2500c36087d180f09509'
+  VERSION_DE_TRIVY: '0.74.0'
+  SHA256_DE_TRIVY: '2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a'
+  # `pip-audit` NO lleva digest: `uv tool run` lo resuelve desde PyPI fijado a
+  # esta version exacta, y esa es toda la garantia que hay aqui. No se anade
+  # maquinaria de hashes para una herramienta que solo lee metadatos y no entra
+  # ni en la imagen ni en el arbol de dependencias del proyecto.
+  VERSION_DE_PIP_AUDIT: '2.10.1'
+  IMAGEN_DE_MINIO: 'minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e'
+  IMAGEN_DE_LA_CI: 'personal-blog-backend:ci'
+
+jobs:
+  calidad:
+    name: Backend quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        # Digest repetido de forma literal a proposito: `services` no admite el
+        # contexto `env`. Es el mismo que fija `POSTGRES_VERSION` en el
+        # `.env.example` de personal-blog-infra.
+        image: postgres:17.11-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+        env:
+          POSTGRES_USER: blog_ci
+          # Credencial de un PostgreSQL efimero que nace y muere con el runner.
+          # NO es un secreto del proyecto y no da acceso a nada externo: por eso
+          # esta a la vista y no en `secrets`, que ademas no llegan a un
+          # `pull_request` abierto desde una bifurcacion.
+          POSTGRES_PASSWORD: ci-efimera-no-es-un-secreto
+          POSTGRES_DB: personal_blog_ci_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U blog_ci -d personal_blog_ci_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      # El runner opera en UTC. Con esa zona,
+      # `test_el_timestamp_no_coincide_con_la_hora_local_del_host` se omite a si
+      # misma —con la zona en UTC su comprobacion seria vacia— y la CI perderia
+      # justo la prueba que demuestra que el log NO sigue al reloj del sistema.
+      # Se fija la zona de desarrollo real para que esa prueba se ejecute de
+      # verdad. La conversion a UTC del log es explicita, asi que ninguna otra
+      # prueba depende de este valor.
+      TZ: America/Guatemala
+      USUARIO_DE_POSTGRES: blog_ci
+      BASE_DE_PRUEBAS: personal_blog_ci_test
+      # La suite exige que exista tambien la base "de desarrollo" —el mismo
+      # nombre sin el sufijo `_test`— para demostrar que la guarda la rechaza y
+      # la deja intacta. Sin ella `test_guarda_del_destino` FALLA, que es lo
+      # correcto: una guarda no puede darse por comprobada si no hay nada que
+      # rechazar. Se crea en el paso de aprovisionamiento.
+      BASE_DE_DESARROLLO: personal_blog_ci
+      PERSONAL_BLOG_TEST_DATABASE_URL: postgresql://blog_ci:ci-efimera-no-es-un-secreto@127.0.0.1:5432/personal_blog_ci_test
+      PERSONAL_BLOG_TEST_STORAGE_ENDPOINT_URL: http://127.0.0.1:9000
+      PERSONAL_BLOG_TEST_STORAGE_ACCESS_ENDPOINT_URL: http://localhost:9000
+      PERSONAL_BLOG_TEST_STORAGE_ACCESS_KEY: ci-minio-efimero
+      PERSONAL_BLOG_TEST_STORAGE_SECRET_KEY: ci-minio-efimera-no-es-un-secreto
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.VERSION_DE_PYTHON }}
+
+      - name: Runtime versions
+        run: |
+          python --version
+          python -m pip --version
+          docker --version
+
+      - name: Install uv (pinned version and verified digest)
+        run: |
+          set -euo pipefail
+          url="https://github.com/astral-sh/uv/releases/download/${VERSION_DE_UV}/uv-x86_64-unknown-linux-gnu.tar.gz"
+          curl --fail --silent --show-error --location --output /tmp/uv.tar.gz "$url"
+          echo "${SHA256_DE_UV}  /tmp/uv.tar.gz" | sha256sum --check --strict -
+          tar -xzf /tmp/uv.tar.gz -C /tmp
+          sudo install -m 0755 /tmp/uv-x86_64-unknown-linux-gnu/uv /usr/local/bin/uv
+          uv --version
+
+      # R-14: el lock deja de valer si alguien toca `pyproject.toml` y no lo
+      # regenera. Se regenera aqui y se exige que no cambie ni un byte.
+      # `--exclude-newer` hace la resolucion determinista, asi que una
+      # diferencia significa lock desfasado, nunca que PyPI publicase algo
+      # nuevo entretanto.
+      - name: Lock is up to date (R-14)
+        run: |
+          set -euo pipefail
+          sh scripts/generar-locks.sh
+          git diff --exit-code -- requirements.lock requirements-dev.lock
+
+      # `--require-hashes` es fail-closed por partida doble: pip rechaza toda
+      # distribucion cuyo digest no coincida Y exige que TODO requisito que
+      # vaya a instalar venga fijado con `==` y con hash.
+      #
+      # El modo NO desactiva la resolucion de dependencias —eso es `--no-deps`,
+      # otra opcion—: pip sigue recorriendo el arbol y aborta en cuanto
+      # encuentra una dependencia sin fijar ni hashear. Aqui no queda nada por
+      # resolver porque el lock enumera el cierre transitivo completo, asi que
+      # se instala exactamente ese arbol y un lock incompleto falla.
+      - name: Install dependencies from the lock
+        run: python -m pip install --require-hashes --requirement requirements-dev.lock
+
+      - name: Installed tree is coherent
+        run: python -m pip check
+
+      - name: Provision the ephemeral databases
+        run: |
+          set -euo pipefail
+          contenedor="${{ job.services.postgres.id }}"
+          # `psql` corre DENTRO del contenedor, por el socket local, que el
+          # `pg_hba` de la imagen atiende con `trust`: la contrasena no viaja
+          # por la linea de comandos ni aparece en el log.
+          docker exec "$contenedor" psql -v ON_ERROR_STOP=1 -U "$USUARIO_DE_POSTGRES" -d postgres \
+            -c "CREATE DATABASE ${BASE_DE_DESARROLLO};"
+          # Segunda barrera de la guarda: vive DENTRO de la base, no en la URL.
+          docker exec "$contenedor" psql -v ON_ERROR_STOP=1 -U "$USUARIO_DE_POSTGRES" -d "$BASE_DE_PRUEBAS" \
+            -c "COMMENT ON DATABASE ${BASE_DE_PRUEBAS} IS 'personal-blog:test-database; efimera de la CI, muere con el runner';"
+          echo 'Marca escrita en la base de pruebas:'
+          docker exec "$contenedor" psql -tAX -U "$USUARIO_DE_POSTGRES" -d "$BASE_DE_PRUEBAS" \
+            -c "SELECT shobj_description(oid, 'pg_database') FROM pg_database WHERE datname = current_database();"
+
+      - name: Start the ephemeral MinIO
+        run: |
+          set -euo pipefail
+          # Las credenciales se pasan por el entorno y no como argumentos: asi
+          # no quedan en la linea de comandos del proceso.
+          MINIO_ROOT_USER="$PERSONAL_BLOG_TEST_STORAGE_ACCESS_KEY" \
+          MINIO_ROOT_PASSWORD="$PERSONAL_BLOG_TEST_STORAGE_SECRET_KEY" \
+          docker run --detach --name ci-minio \
+            --publish 127.0.0.1:9000:9000 \
+            --env MINIO_ROOT_USER --env MINIO_ROOT_PASSWORD \
+            "$IMAGEN_DE_MINIO" server /data
+          for intento in $(seq 1 30); do
+            if curl --fail --silent --output /dev/null http://127.0.0.1:9000/minio/health/live; then
+              echo "MinIO responde tras ${intento} intento(s)."
+              exit 0
+            fi
+            sleep 1
+          done
+          echo 'MinIO no respondio en 30 s.' >&2
+          docker logs ci-minio >&2
+          exit 1
+
+      - name: Check formatting
+        run: ruff format --check .
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Type-check
+        run: mypy .
+
+      # No es un gate tautologico nuevo: son las pruebas que el proyecto ya
+      # tiene. `test_migrations` recorre `upgrade head` -> `downgrade base` ->
+      # `upgrade head` sobre PostgreSQL real, y `test_esquema_fisico` compara el
+      # esquema aplicado contra `Base.metadata` con `compare_metadata`. Se
+      # ejecutan aparte para que la evidencia quede visible en su propio paso;
+      # la suite completa vuelve a incluirlas.
+      - name: Migrations against real PostgreSQL
+        run: pytest tests/integration/test_migrations.py tests/integration/test_esquema_fisico.py -W error
+
+      # `-W error` es la politica declarada del proyecto: no se silencia ninguna
+      # advertencia y no hay `filterwarnings` en `pyproject.toml`. Secuencial
+      # por R-37.
+      - name: Tests
+        run: pytest -W error --durations=15
+
+      # S-09 backend. Sin umbrales inventados, sin `|| true` y sin exclusiones:
+      # si aparece una vulnerabilidad conocida, el paso falla. Se auditan los
+      # dos locks porque el de desarrollo tambien se ejecuta en esta maquina.
+      - name: Audit Python dependencies (S-09)
+        run: |
+          set -euo pipefail
+          uv tool run --from "pip-audit==${VERSION_DE_PIP_AUDIT}" pip-audit --strict --requirement requirements.lock
+          uv tool run --from "pip-audit==${VERSION_DE_PIP_AUDIT}" pip-audit --strict --requirement requirements-dev.lock
+
+      - name: Build the image
+        run: docker build --tag "$IMAGEN_DE_LA_CI" .
+
+      - name: Install Trivy (pinned version and verified digest)
+        run: |
+          set -euo pipefail
+          url="https://github.com/aquasecurity/trivy/releases/download/v${VERSION_DE_TRIVY}/trivy_${VERSION_DE_TRIVY}_Linux-64bit.tar.gz"
+          curl --fail --silent --show-error --location --output /tmp/trivy.tar.gz "$url"
+          echo "${SHA256_DE_TRIVY}  /tmp/trivy.tar.gz" | sha256sum --check --strict -
+          mkdir -p /tmp/trivy
+          tar -xzf /tmp/trivy.tar.gz -C /tmp/trivy
+          sudo install -m 0755 /tmp/trivy/trivy /usr/local/bin/trivy
+          trivy --version
+
+      # Inventario completo, incluidas las que hoy no tienen correccion
+      # publicada. No lleva `--exit-code`, asi que termina en 0 por defecto: es
+      # un informe, y el gate real es el paso siguiente. No oculta nada.
+      - name: Image vulnerability inventory
+        run: trivy image --scanners vuln --severity LOW,MEDIUM,HIGH,CRITICAL --format table "$IMAGEN_DE_LA_CI"
+
+      # Gate real. `--ignore-unfixed` descarta unicamente lo que hoy NO puede
+      # arreglarse —paquetes de la base Debian sin version corregida aguas
+      # arriba, el residual que Task/018 registro en R-15—; todo HIGH o
+      # CRITICAL con correccion disponible rompe la ejecucion. No hay
+      # `.trivyignore`, ni lista de excepciones, ni umbral inventado.
+      - name: Actionable image vulnerabilities (blocking)
+        run: |
+          trivy image --scanners vuln --severity HIGH,CRITICAL \
+            --ignore-unfixed --exit-code 1 --format table "$IMAGEN_DE_LA_CI"
