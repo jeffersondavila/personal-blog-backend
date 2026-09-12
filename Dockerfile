@@ -58,7 +58,24 @@ RUN pip install --require-hashes -r requirements.lock \
 # ---------------------------------------------------------------------------
 FROM python:3.12.14-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea AS runtime
 
-# El runtime no instala paquetes. Retira tambien el pip global de la base.
+# El digest del `FROM` fija el punto de partida, pero no las correcciones que
+# Debian publica despues. Esta capa aplica las actualizaciones de seguridad
+# disponibles en el momento de la construccion sobre los paquetes que ya trae
+# la base: con `--no-install-recommends` no incorpora ninguno nuevo ni retira
+# ninguno.
+#
+# Consecuencia aceptada para esta imagen local/CI (`Task/020.3`, B-020.3-C): el
+# sistema de archivos final deja de estar determinado unicamente por el digest.
+# Sin la capa, el gate S-09 falla en cuanto Debian publica una version corregida
+# de un CVE que la base todavia arrastra, y la alternativa —esperar a que se
+# reconstruya `python:3.12.14-slim` aguas arriba— no tiene fecha conocida. La
+# decision no se extiende por si sola al resto de imagenes del proyecto.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
+# El runtime no incorpora paquetes adicionales: solo actualiza los que la base
+# ya traia. Retira tambien el pip global de la base.
 RUN /usr/local/bin/python -m pip uninstall --yes pip
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
