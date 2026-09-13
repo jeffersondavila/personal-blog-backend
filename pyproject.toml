@@ -64,6 +64,29 @@ dependencies = [
     # **Impacto en Lambda: minimo.** Es Python puro, sin extension compilada, y
     # ocupa ~164 KB (P-07). No arrastra dependencias transitivas.
     "python-multipart==0.0.32",
+    # Adaptador ASGI -> AWS Lambda (`Task/023`). Traduce el evento de API
+    # Gateway HTTP API v2 al scope ASGI y la respuesta de vuelta al formato v2.
+    #
+    # Es una dependencia de EJECUCION, no de desarrollo: viaja al artefacto ZIP
+    # que construye `Task/024`. En local no se usa —uvicorn sigue siendo el
+    # entrypoint— pero entra en la imagen, que es Python puro y ~40 KB.
+    #
+    # Por que una biblioteca y no un adaptador propio: lo que habria que
+    # escribir no es logica del proyecto sino fontaneria de protocolo
+    # —cabeceras multivalor, `rawQueryString`, separacion de `set-cookie` al
+    # array `cookies` de v2, decision base64 por tipo MIME y el protocolo ASGI
+    # de `lifespan`—. Un error sutil ahi rompe la sesion administrativa **sin
+    # error visible**, que es justo el defecto que L-18 existe para impedir.
+    #
+    # Requisito T-04 intacto: `app/lambda_handler.py` es el UNICO modulo que la
+    # importa, y `tests/unit/test_guarda_del_adaptador_lambda.py` lo comprueba
+    # recorriendo el arbol sintactico de `app/`. Quitar Lambda sigue siendo
+    # borrar un archivo y esta linea.
+    #
+    # Rueda `py3-none-any`, sin extension compilada: no condiciona la
+    # construccion Linux del artefacto (P-07 es de `Task/024`). Su unica
+    # dependencia declarada, `typing-extensions`, ya estaba en ambos *locks*.
+    "mangum==0.22.0",
     # Cota sobre una dependencia TRANSITIVA de starlette, no una dependencia
     # nueva: `anyio` ya entraba por starlette y esta instalado desde `Task/005`.
     #
