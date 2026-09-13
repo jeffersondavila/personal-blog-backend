@@ -255,14 +255,16 @@ def sembrar(sesion: Session, entrada: EntradaDeSemilla) -> ResultadoDeSemilla:
     )
 
 
-def ejecutar(*, entorno: Mapping[str, str], sesion: Session, salida: TextIO, error: TextIO) -> int:
-    """Lee el entorno, siembra y explica el resultado. Devuelve el codigo de salida.
+def _sembrar_y_reportar(
+    *, entrada: EntradaDeSemilla, sesion: Session, salida: TextIO, error: TextIO
+) -> int:
+    """Siembra con una entrada **ya validada** y explica el resultado.
 
-    No confirma la transaccion: eso es de `main`. Tampoco revierte, para que el
-    llamante decida — dentro de una prueba, la fixture ya lo hace.
+    Existe para que `main` no tenga que validar dos veces ni repetir ninguna
+    regla: `leer_entrada` sigue siendo la **unica** fuente de validacion, y esta
+    funcion es lo que queda del trabajo una vez que la entrada es valida.
     """
     try:
-        entrada = leer_entrada(entorno)
         resultado = sembrar(sesion, entrada)
     except SemillaInvalidaError as fallo:
         print(f"ERROR: {fallo}", file=error)
@@ -288,14 +290,49 @@ def ejecutar(*, entorno: Mapping[str, str], sesion: Session, salida: TextIO, err
     return CODIGO_DE_EXITO
 
 
+def ejecutar(*, entorno: Mapping[str, str], sesion: Session, salida: TextIO, error: TextIO) -> int:
+    """Lee el entorno, siembra y explica el resultado. Devuelve el codigo de salida.
+
+    No confirma la transaccion: eso es de `main`. Tampoco revierte, para que el
+    llamante decida — dentro de una prueba, la fixture ya lo hace.
+    """
+    try:
+        entrada = leer_entrada(entorno)
+    except SemillaInvalidaError as fallo:
+        print(f"ERROR: {fallo}", file=error)
+        return CODIGO_DE_ERROR
+    return _sembrar_y_reportar(entrada=entrada, sesion=sesion, salida=salida, error=error)
+
+
 def main() -> int:
-    """Punto de entrada: abre la sesion real y confirma si todo fue bien."""
-    # Import local: `main` es lo unico que necesita la conexion real, y las
-    # pruebas no deben arrastrar la configuracion del proceso al importarlas.
+    """Punto de entrada: valida la entrada, y **solo entonces** toca la infraestructura.
+
+    El orden importa y es la correccion del defecto **H-8** (`Task/022`). Antes,
+    `main` abria `session_scope()` primero, y eso construye `Settings`, que exige
+    la configuracion **de la aplicacion** —`BLOG_DATABASE_URL`,
+    `BLOG_STORAGE_BUCKET`, `BLOG_PUBLIC_SITE_BASE_URL`—. Con un `.env` presente
+    la diferencia no se notaba; sin el, olvidar una variable de la semilla
+    producia un error de configuracion de la aplicacion en lugar del nombre de la
+    variable que falta. La CI, que no tiene `.env`, lo destapo.
+
+    Validar primero es ademas lo util: quien olvida una variable recibe el nombre
+    de esa variable, y no se abre ninguna conexion a PostgreSQL ni a MinIO para
+    averiguarlo.
+    """
+    try:
+        entrada = leer_entrada(os.environ)
+    except SemillaInvalidaError as fallo:
+        print(f"ERROR: {fallo}", file=sys.stderr)
+        return CODIGO_DE_ERROR
+
+    # Import local y **posterior a la validacion**: construir `Settings` es parte
+    # de cargar la infraestructura, y no debe ocurrir si la entrada no sirve.
     from app.shared.database.session import session_scope
 
     with session_scope() as sesion:
-        codigo = ejecutar(entorno=os.environ, sesion=sesion, salida=sys.stdout, error=sys.stderr)
+        codigo = _sembrar_y_reportar(
+            entrada=entrada, sesion=sesion, salida=sys.stdout, error=sys.stderr
+        )
         if codigo != CODIGO_DE_EXITO:
             sesion.rollback()
         return codigo
