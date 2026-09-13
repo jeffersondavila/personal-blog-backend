@@ -133,7 +133,7 @@ include = ["app*"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-src = ["app", "tests"]
+src = ["app", "tests", "scripts"]
 extend-exclude = ["alembic/versions"]
 
 [tool.ruff.lint]
@@ -160,7 +160,9 @@ ignore = [
 "tests/**/*.py" = ["S101", "S105", "S106"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["app"]
+# `scripts` es codigo del propio repositorio, no una dependencia: sin declararlo,
+# isort lo ordenaria entre los paquetes de terceros (`Task/022`).
+known-first-party = ["app", "scripts"]
 
 [tool.ruff.format]
 quote-style = "double"
