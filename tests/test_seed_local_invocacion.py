@@ -42,24 +42,46 @@ RUTA_DEL_SCRIPT = RAIZ_DEL_REPOSITORIO / "scripts" / "seed_local.py"
 #: cero: en Windows, un entorno sin `SystemRoot` impide inicializar el stack de
 #: sockets y el subproceso muere con `WinError 10106` antes de ejecutar una sola
 #: linea del script. Fue el primer intento de esta prueba, y no medía nada.
+#:
+#: **Retirar estas variables no basta por si solo** (defecto H-8): `Settings` no
+#: lee solo el entorno, tambien el archivo `.env` del directorio de trabajo. En
+#: una maquina con `.env` el subproceso encontraba ahi la configuracion de la
+#: aplicacion, y estas pruebas pasaban sin demostrar el orden que afirman. En CI,
+#: sin `.env`, fallaban. Por eso existe ademas
+#: `test_valida_la_semilla_antes_que_la_configuracion_de_la_aplicacion`, que fija
+#: la propiedad **sin depender de que exista o no un `.env`**.
 PREFIJOS_RETIRADOS = ("PERSONAL_BLOG_", "BLOG_")
 
+#: Configuracion de aplicacion deliberadamente **rota**. Las variables de entorno
+#: tienen precedencia sobre el `.env`, asi que construir `Settings` con esto
+#: falla siempre, haya `.env` o no.
+CONFIGURACION_INSERVIBLE = {
+    "BLOG_DATABASE_URL": "no-es-una-url",
+    "BLOG_STORAGE_BUCKET": "",
+    "BLOG_PUBLIC_SITE_BASE_URL": "no-es-una-url",
+}
 
-def _entorno_sin_configuracion() -> dict[str, str]:
-    return {
+
+def _entorno_sin_configuracion(extra: dict[str, str] | None = None) -> dict[str, str]:
+    entorno = {
         clave: valor
         for clave, valor in os.environ.items()
         if not clave.startswith(PREFIJOS_RETIRADOS)
     }
+    if extra:
+        entorno.update(extra)
+    return entorno
 
 
-def _ejecutar(argumentos: list[str]) -> subprocess.CompletedProcess[str]:
+def _ejecutar(
+    argumentos: list[str], *, extra: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # noqa: S603 - argumentos fijos, sin shell y sin entrada externa
         [sys.executable, *argumentos],
         capture_output=True,
         text=True,
         cwd=RAIZ_DEL_REPOSITORIO,
-        env=_entorno_sin_configuracion(),
+        env=_entorno_sin_configuracion(extra),
         timeout=120,
         check=False,
     )
@@ -95,3 +117,28 @@ def test_no_intenta_conectarse_antes_de_validar_la_entrada() -> None:
     assert "psycopg" not in resultado.stderr.lower()
     assert "connection" not in resultado.stderr.lower()
     assert "database_url" not in resultado.stderr.lower()
+
+
+def test_valida_la_semilla_antes_que_la_configuracion_de_la_aplicacion() -> None:
+    """La validacion de la semilla ocurre **antes** de construir `Settings` (H-8).
+
+    Es la prueba que fija el orden sin depender del entorno de la maquina. Se
+    ejecuta con una configuracion de aplicacion **inservible** en variables de
+    entorno, que tienen precedencia sobre el `.env`: si el script construyera
+    `Settings` primero —como hacia antes de corregir H-8— fallaria hablando de
+    `database_url` o `storage_bucket`. Lo que debe decir es que variable de la
+    **semilla** falta.
+
+    Haya `.env` o no, el resultado es el mismo. Esa independencia es justo lo que
+    faltaba: el defecto vivio oculto porque la maquina de desarrollo tenia un
+    `.env` que la CI no tiene.
+    """
+    resultado = _ejecutar([str(RUTA_DEL_SCRIPT)], extra=CONFIGURACION_INSERVIBLE)
+
+    assert resultado.returncode == CODIGO_DE_ERROR
+    assert VARIABLE_CORREO in resultado.stderr
+    for campo in ("database_url", "storage_bucket", "public_site_base_url"):
+        assert campo not in resultado.stderr.lower(), (
+            f"la configuracion de la aplicacion ({campo}) se evaluo antes que la "
+            "entrada de la semilla: el orden de H-8 volvio a invertirse"
+        )
