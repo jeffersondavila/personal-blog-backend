@@ -249,3 +249,55 @@ jobs:
         run: |
           trivy image --scanners vuln --severity HIGH,CRITICAL \
             --ignore-unfixed --exit-code 1 --format table "$IMAGEN_DE_LA_CI"
+
+      # -------------------------------------------------------------------
+      # Artefacto ZIP de Lambda (Task/024)
+      #
+      # La CI es la AUTORIDAD del artefacto. Todo lo de aqui abajo corre
+      # dentro de la imagen oficial del runtime de Lambda fijada por digest
+      # en `scripts/empaquetar_lambda.py`: el runner solo orquesta Docker,
+      # igual que hace Windows en local.
+      #
+      # El ZIP es EFIMERO a proposito (decision D-024-K): se construye, se
+      # valida y muere con el runner. No se publica como artefacto de GitHub
+      # Actions porque no hay ninguna necesidad demostrada que lo justifique,
+      # y la evidencia durable —checksum, tamanos, composicion— queda en el
+      # log y en el reporte de la tarea. `Task/038` es la responsable de la
+      # automatizacion del despliegue.
+      #
+      # Ninguno de estos pasos usa AWS: `public.ecr.aws` es un registro
+      # publico de contenedores, no pide cuenta ni credenciales, y aqui no se
+      # crea ni se contacta ningun recurso de AWS.
+      # -------------------------------------------------------------------
+
+      # Dos construcciones INDEPENDIENTES. Cada `docker run` levanta un
+      # contenedor efimero nuevo, asi que `A` y `B` no comparten directorio de
+      # trabajo ni cache: es lo que hace que compararlas signifique algo.
+      - name: Build the Lambda artifact (A)
+        run: python scripts/empaquetar_lambda.py construir --destino lambda_package/A
+
+      - name: Build the Lambda artifact (B)
+        run: python scripts/empaquetar_lambda.py construir --destino lambda_package/B
+
+      # Bytes y SHA-256, nunca solo la lista de archivos: dos ZIP con el mismo
+      # inventario y distintos bytes NO son reproducibles.
+      - name: Artifact is byte-for-byte reproducible (A == B)
+        run: python scripts/empaquetar_lambda.py comparar lambda_package/A lambda_package/B
+
+      # Revalida leyendo SOLO el ZIP: layout, rutas, contenido prohibido,
+      # arquitectura de los binarios, inventario frente al lock, orden,
+      # fechas, permisos, checksum y cuotas de tamano.
+      - name: Artifact passes its own gates
+        run: python scripts/empaquetar_lambda.py verificar lambda_package/A
+
+      # Ejecuta el handler DESDE el ZIP extraido en un proceso `-I -S -W error`
+      # sin arbol de fuentes, sin site-packages, sin `.env` y sin credenciales,
+      # y ejercita Argon2, Pillow y el driver binario de PostgreSQL.
+      - name: Handler responds from the isolated artifact
+        run: python scripts/empaquetar_lambda.py ejecutar-aislado lambda_package/A
+
+      # Retira una dependencia real dejando una copia alcanzable fuera y exige
+      # que la ejecucion aislada siga fallando. Sin esto, nada demuestra que el
+      # paso anterior no este tomando prestadas dependencias del entorno.
+      - name: Isolation of the harness is real (negative controls)
+        run: python scripts/empaquetar_lambda.py control-negativo lambda_package/A
