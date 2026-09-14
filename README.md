@@ -430,7 +430,9 @@ del sistema ni de la variable `TZ`. En una máquina de desarrollo en UTC−6, la
 **no** coincide con el reloj de la pantalla, y es lo correcto.
 `tests/test_logging_utc.py` lo verifica con instantes conocidos.
 
-## 11. Docker
+## 11. Empaquetado
+
+### 11.1 Imagen Docker — ejecución local
 
 ```powershell
 docker build -t personal-blog-backend:local .
@@ -446,6 +448,63 @@ privilegios** y trae un `HEALTHCHECK` contra `/health`. **No contiene secretos**
 credenciales se inyectan en tiempo de ejecución.
 
 La incorporación del backend al Docker Compose del entorno corresponde a `Task/007`.
+
+### 11.2 Artefacto ZIP para AWS Lambda (`Task/024`)
+
+**La imagen Docker de arriba no es el destino de producción.** Producción es AWS Lambda
+con un **artefacto ZIP** (ADR-003), y lo construye `scripts/empaquetar_lambda.py`.
+
+Por qué existe una herramienta y no un puñado de comandos: el backend se desarrolla en
+**Windows** y **13 de sus 41 distribuciones de ejecución traen binarios nativos**. Copiar
+un `.venv` de Windows a un ZIP produce un paquete que **no arranca en Lambda**, y ese
+fallo no se ve hasta la nube. Por eso las dependencias se instalan **siempre dentro de
+Linux**, en la imagen oficial del runtime de Lambda **fijada por digest**: Windows
+orquesta Docker, pero nunca aporta bytes al artefacto.
+
+**Requisito: Docker.** No hace falta cuenta de AWS, ni credenciales, ni AWS CLI:
+`public.ecr.aws` es un registro público de contenedores y ningún paso contacta con AWS.
+
+```powershell
+# Dos construcciones independientes, en directorios distintos
+python scripts/empaquetar_lambda.py construir --destino lambda_package/A
+python scripts/empaquetar_lambda.py construir --destino lambda_package/B
+
+# Reproducibilidad: mismos bytes, mismo SHA-256, mismo manifiesto
+python scripts/empaquetar_lambda.py comparar lambda_package/A lambda_package/B
+
+# Revalidación leyendo SOLO el ZIP
+python scripts/empaquetar_lambda.py verificar lambda_package/A
+
+# El handler responde desde el ZIP, en un proceso Linux aislado
+python scripts/empaquetar_lambda.py ejecutar-aislado lambda_package/A
+
+# El aislamiento del harness es real, no declarado
+python scripts/empaquetar_lambda.py control-negativo lambda_package/A
+```
+
+`construir` deja en el directorio de destino el ZIP, su `.sha256`, el `manifiesto.json`
+—determinista: sin reloj ni rutas locales— y un `construccion.json` con la metadata
+variable. **Nada de eso se versiona**: `lambda_package/` y `*.zip` están en `.gitignore`.
+
+| Propiedad | Valor |
+| --- | --- |
+| *Handler* | `app.lambda_handler.handler` |
+| *Layout* | `app/` **directamente en la raíz**; sin prefijo `python/` (eso es de *layers*) |
+| Runtime destino | Python 3.12, `linux/amd64` |
+| Dependencias | `requirements.lock` con `--require-hashes --only-binary=:all: --no-compile` |
+| Determinismo | fecha `1980-01-01`, permisos `0644`, orden lexicográfico, DEFLATE fijo, sin *bytecode* |
+
+**Alcance de la garantía de reproducibilidad.** Vale con las mismas fuentes, los mismos
+*locks*, los mismos artefactos de dependencias, las mismas herramientas fijadas y el mismo
+entorno de construcción controlado. **No** se promete que PyPI conserve los archivos
+indefinidamente ni reproducibilidad universal en cualquier máquina o herramienta.
+
+**Sobre las cuotas de Lambda.** El proyecto se mantiene por debajo de **50 MB
+comprimido** y **250 MB descomprimido**. Los 50 MB son el límite de **carga directa** por
+la API, la SDK o la consola: un paquete mayor se despliega desde Amazon S3. Este
+repositorio **no** afirma que Lambda prohíba todo ZIP mayor de 50 MB.
+
+Desplegar el artefacto es de `Task/025`; medir su arranque en frío real, de `Task/032`.
 
 ---
 
