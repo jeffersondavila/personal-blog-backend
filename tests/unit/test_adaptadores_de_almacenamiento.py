@@ -285,3 +285,123 @@ def test_s3_admite_un_endpoint_de_acceso_distinto_del_operativo() -> None:
 
     assert acceso.url.startswith("http://localhost:9000/")
     assert almacenamiento._cliente.meta.endpoint_url == "http://127.0.0.1:9000"
+
+
+# --- DEF-030-1: anfitrion de la URL prefirmada contra AWS real --------------
+#
+# Defecto encontrado por la validacion REAL de `Task/030` contra el bucket de
+# medios en us-east-2: `acceso_temporal` devolvia una URL cuyo anfitrion era el
+# **global** `<bucket>.s3.amazonaws.com` mientras la firma llevaba alcance de
+# region, y S3 respondia **403 SignatureDoesNotMatch**.
+#
+# El adaptador declaraba `addressing_style` solo cuando habia `endpoint_url`
+# propio. Sin endpoint —el caso de AWS real— no declaraba ninguno, y botocore
+# construia el anfitrion heredado global al firmar. El `endpoint_url` que el
+# cliente resolvia si era el regional correcto: el problema aparecia solo al
+# generar la URL prefirmada, que es justo lo que ninguna prueba miraba.
+#
+# Estas pruebas miran el **comportamiento observable**: el anfitrion que recibe
+# el navegador y el alcance de la firma. No comprueban como se configura el
+# cliente por dentro, para que cualquier arreglo equivalente siga siendo valido.
+#
+# La firma es un HMAC local, asi que esto no necesita red ni credenciales reales.
+
+_ANFITRION_GLOBAL_INCOMPATIBLE = ".s3.amazonaws.com"
+
+
+def _anfitrion_de(url: str) -> str:
+    from urllib.parse import urlsplit
+
+    return urlsplit(url).netloc
+
+
+@pytest.mark.parametrize("region", ["us-east-2", "eu-west-1", "sa-east-1"])
+def test_la_prefirmada_de_aws_usa_un_anfitrion_regional(region: str) -> None:
+    """Contra AWS real el enlace debe apuntar a un anfitrion de la region firmada.
+
+    Es la condicion que S3 comprueba: si el anfitrion no corresponde a la region
+    del alcance de la firma, responde 403 `SignatureDoesNotMatch`. Se parametriza
+    por region para que el arreglo no pueda ser un valor fijo.
+    """
+    almacenamiento = S3Storage(bucket="bucket-de-produccion", region=region, **CREDENCIALES)
+
+    url = almacenamiento.acceso_temporal("medios/x/original.png", duracion=timedelta(minutes=5)).url
+    anfitrion = _anfitrion_de(url)
+
+    assert region in anfitrion, f"el anfitrion {anfitrion} no declara la region {region}"
+    assert not anfitrion.endswith(_ANFITRION_GLOBAL_INCOMPATIBLE), (
+        f"anfitrion global heredado: {anfitrion}. Es el defecto DEF-030-1: la firma "
+        f"tiene alcance {region} y S3 devuelve 403 SignatureDoesNotMatch"
+    )
+
+
+def test_la_prefirmada_de_aws_conserva_sigv4_y_el_alcance_de_la_region() -> None:
+    """El arreglo del anfitrion no puede degradar la firma."""
+    almacenamiento = S3Storage(bucket="bucket-de-produccion", region="us-east-2", **CREDENCIALES)
+
+    url = almacenamiento.acceso_temporal("medios/x/original.png", duracion=timedelta(minutes=5)).url
+
+    assert "X-Amz-Algorithm=AWS4-HMAC-SHA256" in url
+    assert "%2Fus-east-2%2Fs3%2Faws4_request" in url
+
+
+def test_la_prefirmada_de_aws_apunta_al_objeto_pedido() -> None:
+    """El anfitrion regional no puede perder la clave por el camino."""
+    almacenamiento = S3Storage(bucket="bucket-de-produccion", region="us-east-2", **CREDENCIALES)
+
+    url = almacenamiento.acceso_temporal(
+        "medios/abc/original.png", duracion=timedelta(minutes=5)
+    ).url
+
+    assert "medios/abc/original.png" in url
+    assert "bucket-de-produccion" in url
+
+
+def test_minio_conserva_el_estilo_por_ruta_contra_su_endpoint() -> None:
+    """El arreglo de AWS no puede cambiar el laboratorio.
+
+    MinIO y el emulador exigen estilo por **ruta**: el virtual convertiria el
+    nombre del bucket en un subdominio que no resuelve en la red local.
+    """
+    almacenamiento = MinIOStorage(
+        bucket="blog-lab-medios",
+        endpoint_url="http://127.0.0.1:9000",
+        region="us-east-1",
+        **CREDENCIALES,
+    )
+
+    url = almacenamiento.acceso_temporal("medios/x/original.png", duracion=timedelta(minutes=5)).url
+
+    assert url.startswith("http://127.0.0.1:9000/blog-lab-medios/medios/x/original.png")
+
+
+def test_s3_storage_con_endpoint_compatible_conserva_el_estilo_por_ruta() -> None:
+    """`S3Storage` contra un servicio compatible S3 sigue firmando por ruta.
+
+    Es el modo con el que `Task/010` lo probo sin AWS y el que usa el laboratorio.
+    El arreglo de DEF-030-1 solo puede afectar al caso sin endpoint declarado.
+    """
+    almacenamiento = S3Storage(
+        bucket="blog-lab-medios",
+        region="us-east-1",
+        endpoint_url="http://127.0.0.1:4566",
+        **CREDENCIALES,
+    )
+
+    url = almacenamiento.acceso_temporal("medios/x/original.png", duracion=timedelta(minutes=5)).url
+
+    assert url.startswith("http://127.0.0.1:4566/blog-lab-medios/medios/x/original.png")
+
+
+def test_s3_storage_con_endpoint_de_acceso_propio_firma_contra_el() -> None:
+    """La semantica del endpoint de acceso separado se conserva intacta."""
+    almacenamiento = S3Storage(
+        bucket="bucket-de-produccion",
+        region="us-east-2",
+        access_endpoint_url="https://s3.us-east-2.amazonaws.com",
+        **CREDENCIALES,
+    )
+
+    url = almacenamiento.acceso_temporal("medios/x/original.png", duracion=timedelta(minutes=5)).url
+
+    assert _anfitrion_de(url) == "s3.us-east-2.amazonaws.com"

@@ -77,13 +77,34 @@ class S3Storage(AlmacenamientoCompatibleS3):
         return self._construir_cliente(self.endpoint_url, para_sonda=True)
 
     def _construir_cliente(self, endpoint_url: str | None, *, para_sonda: bool = False) -> S3Client:
-        """Cliente de S3 apuntado a `endpoint_url`, o al de AWS si es `None`."""
+        """Cliente de S3 apuntado a `endpoint_url`, o al de AWS si es `None`.
+
+        El estilo de direccionamiento se declara **siempre**, y eso es el arreglo
+        de **DEF-030-1**. Antes solo se declaraba cuando habia endpoint propio, y
+        contra AWS real —sin endpoint— el estilo quedaba sin fijar: `botocore`
+        resolvia bien el `endpoint_url` regional del cliente, pero al generar una
+        URL **prefirmada** construia el anfitrion heredado global
+        `<bucket>.s3.amazonaws.com` mientras la firma llevaba alcance de region.
+        S3 respondia **403 SignatureDoesNotMatch**, medido contra el bucket real
+        de `Task/030` en us-east-2.
+
+        - Endpoint propio —MinIO, emulador— exige la **ruta**: el estilo virtual
+          convertiria el nombre del bucket en un subdominio que la red local no
+          resuelve.
+        - AWS real usa el **virtual**, que es el que Amazon recomienda y el que
+          produce el anfitrion regional `<bucket>.s3.<region>.amazonaws.com`.
+
+        No hay ningun valor fijo aqui: el anfitrion lo deriva el SDK de la region
+        configurada.
+        """
         import boto3
         from botocore.config import Config
 
-        opciones: dict[str, object] = {"signature_version": "s3v4"}
-        if endpoint_url is not None:
-            opciones["s3"] = {"addressing_style": "path"}
+        estilo = "path" if endpoint_url is not None else "virtual"
+        opciones: dict[str, object] = {
+            "signature_version": "s3v4",
+            "s3": {"addressing_style": estilo},
+        }
         if para_sonda:
             opciones.update(opciones_de_sonda())
 
