@@ -16,6 +16,8 @@ on:
 
 # El workflow solo lee el repositorio: no publica paquetes, no comenta, no
 # escribe releases y no despliega nada.
+# `packages: read` NO se concede: el espejo privado de MinIO se lee con un
+# secreto dedicado, no con el GITHUB_TOKEN (Task/030.1; ver el paso de login).
 permissions:
   contents: read
 
@@ -42,7 +44,23 @@ env:
   # maquinaria de hashes para una herramienta que solo lee metadatos y no entra
   # ni en la imagen ni en el arbol de dependencias del proyecto.
   VERSION_DE_PIP_AUDIT: '2.10.1'
-  IMAGEN_DE_MINIO: 'quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e'
+  # MinIO RELEASE.2025-09-07T16-13-09Z, servido desde el espejo PRIVADO del
+  # proyecto (H-028-1, Task/030.1). quay.io y docker.io dejaron de servir esta
+  # imagen de forma anonima: el CI fallaba con `unauthorized` antes de ejecutar
+  # ninguna prueba.
+  #
+  # Identidad. Hasta Task/030.1 aqui se fijaba el INDICE multi-arquitectura
+  #   quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+  # y este digest es su manifiesto HIJO `linux/amd64`, medido como tal en Task/021
+  # y republicado byte a byte en GHCR en Task/028 (mismo digest recalculado, mismo
+  # config, mismas capas). El runner x64 siempre resolvia el indice a este
+  # manifiesto: no cambia la release ni los bytes que se ejecutan. El indice no
+  # esta en el espejo, que solo conserva el manifiesto `linux/amd64`.
+  #
+  # Riesgo declarado: esta referencia vale SOLO para `linux/amd64`. Si el job
+  # pasa a un runner de otra arquitectura (arm64), MinIO dejara de arrancar y
+  # habra que publicar en el espejo el manifiesto de esa plataforma.
+  IMAGEN_DE_MINIO: 'ghcr.io/jeffersondavila/personal-blog-minio-base@sha256:a1a8bd4ac40ad7881a245bab97323e18f971e4d4cba2c2007ec1bedd21cbaba2'
   IMAGEN_DE_LA_CI: 'personal-blog-backend:ci'
 
 jobs:
@@ -164,6 +182,36 @@ jobs:
           echo 'Marca escrita en la base de pruebas:'
           docker exec "$contenedor" psql -tAX -U "$USUARIO_DE_POSTGRES" -d "$BASE_DE_PRUEBAS" \
             -c "SELECT shobj_description(oid, 'pg_database') FROM pg_database WHERE datname = current_database();"
+
+      # El espejo de MinIO es PRIVADO y se lee con un secreto dedicado, NO con el
+      # GITHUB_TOKEN. Mismo mecanismo y misma razon que `personal-blog-infra`
+      # (Task/028, H-028-1): este repositorio es PUBLICO, y conceder acceso al
+      # paquete privado mediante «Manage Actions access» lo abriria a los forks
+      # —GitHub advierte que «if you grant a public repository access to private
+      # packages, forks of the repository may be able to access the private
+      # packages»—, porque el `pull_request` de un fork ejecuta el workflow de un
+      # merge commit que controla quien abre el PR. Un `if:` aqui no es frontera.
+      #
+      # Los secretos del repositorio SI son frontera: GitHub no los entrega a
+      # workflows de `pull_request` desde fork. El PAT es classic, solo
+      # `read:packages` y con caducidad; el paquete sigue privado y sin acceso
+      # concedido al repositorio.
+      #
+      # Consecuencia declarada: un PR externo no puede ejecutar este CI completo;
+      # el paso falla con un mensaje explicito, no se silencia.
+      - name: Log in to GHCR for the private MinIO base
+        env:
+          GHCR_MINIO_READ_TOKEN: ${{ secrets.GHCR_MINIO_READ_TOKEN }}
+        run: |
+          set -euo pipefail
+          if test -z "${GHCR_MINIO_READ_TOKEN}"; then
+            echo "FALLO: falta el secreto GHCR_MINIO_READ_TOKEN." >&2
+            echo "En un pull_request desde un fork esto es esperado: los secretos" >&2
+            echo "no se entregan a esas ejecuciones y el espejo privado no es legible." >&2
+            exit 1
+          fi
+          printf '%s' "${GHCR_MINIO_READ_TOKEN}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin
+          echo "autenticado en ghcr.io para leer la base privada"
 
       - name: Start the ephemeral MinIO
         run: |
